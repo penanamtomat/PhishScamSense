@@ -123,7 +123,7 @@ def test_predict_missing_url_field(client):
 
 def test_predict_wrong_content_type(client):
     """Non-JSON body returns 422."""
-    resp = client.post("/api/v1/predict", data="not-json", headers={"Content-Type": "text/plain"})
+    resp = client.post("/api/v1/predict", content="not-json", headers={"Content-Type": "text/plain"})
     assert resp.status_code in (422, 400)
 
 
