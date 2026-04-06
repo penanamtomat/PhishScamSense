@@ -8,4 +8,6 @@ class PredictionRequest(BaseModel):
 class PredictionResponse(BaseModel):
     phishing: bool
     confidence: float
+    label: int = 0
+    threat_type: str = "benign"
     features: dict | None = None

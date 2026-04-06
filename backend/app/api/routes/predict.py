@@ -1,28 +1,28 @@
-import httpx
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
 from app.schemas.prediction import PredictionRequest, PredictionResponse
+from app.services.ml_predictor import get_predictor
 
 router = APIRouter()
 
 
 @router.post("/predict", response_model=PredictionResponse)
 async def predict_url(request: PredictionRequest):
-    """Send URL to ML inference service for phishing prediction."""
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                f"{settings.MODEL_SERVICE_URL}/predict",
-                json={"url": request.url},
-            )
-            response.raise_for_status()
-            result = response.json()
+    """Predict whether a URL is benign, phishing, malware, or spam."""
+    predictor = get_predictor()
+    if predictor is None:
+        raise HTTPException(status_code=503, detail="ML model not loaded")
 
-        return PredictionResponse(
-            phishing=result["phishing"],
-            confidence=result["confidence"],
-            features=result.get("features"),
-        )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=503, detail=f"ML service unavailable: {e}")
+    try:
+        result = predictor.predict(request.url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
+
+    return PredictionResponse(
+        phishing=result["phishing"],
+        confidence=result["confidence"],
+        label=result["label"],
+        threat_type=result["threat_type"],
+        features=result.get("features"),
+    )

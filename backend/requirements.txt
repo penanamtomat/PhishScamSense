@@ -18,3 +18,14 @@ redis==5.2.1             # Celery broker/backend
 
 # Environment
 python-dotenv==1.0.1
+
+# ML inference (local model loading from ml/exports/)
+torch>=2.0.0
+transformers>=4.35.0
+xgboost>=2.0.0
+numpy>=1.24.0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1            # AsyncClient for TestClient

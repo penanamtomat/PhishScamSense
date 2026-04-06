@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # ML Model
     MODEL_SERVICE_URL: str = "http://localhost:3000"
+    MODEL_EXPORTS_PATH: str = "ml/exports"
 
     # Third-party APIs
     VIRUSTOTAL_API_KEY: str = ""
