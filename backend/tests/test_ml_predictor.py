@@ -113,16 +113,18 @@ class TestExtractUrlFeatures:
 
 class TestMLPredictorInit:
     def test_loads_models_from_exports_dir(self, tmp_path):
-        """MLPredictor.__init__ calls torch.load and xgb.load_model."""
+        """MLPredictor.__init__ loads fusion_model.pt via torch and xgb_classifier.pkl via pickle."""
         fusion_path = tmp_path / "fusion_model.pt"
-        xgb_path = tmp_path / "xgb_classifier.json"
+        xgb_path = tmp_path / "xgb_classifier.pkl"
         fusion_path.touch()
         xgb_path.touch()
+
+        mock_xgb_instance = MagicMock()
 
         with (
             patch("app.services.ml_predictor.torch.load") as mock_torch_load,
             patch("app.services.ml_predictor.PhishScamSenseFusionModel") as mock_fusion_cls,
-            patch("app.services.ml_predictor.xgb.XGBClassifier") as mock_xgb_cls,
+            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb_instance),
             patch("app.services.ml_predictor.URLTokenizer"),
         ):
             mock_fusion = MagicMock()
@@ -130,12 +132,12 @@ class TestMLPredictorInit:
             mock_torch_load.return_value = {}
 
             from app.services.ml_predictor import MLPredictor
-            MLPredictor(tmp_path)
+            predictor = MLPredictor(tmp_path)
 
             mock_torch_load.assert_called_once()
             mock_fusion.load_state_dict.assert_called_once_with({})
             mock_fusion.eval.assert_called_once()
-            mock_xgb_cls.return_value.load_model.assert_called_once_with(str(xgb_path))
+            assert predictor.xgb_classifier is mock_xgb_instance
 
 
 class TestMLPredictorPredict:
@@ -143,14 +145,17 @@ class TestMLPredictorPredict:
     def predictor(self, tmp_path):
         """Return a fully mocked MLPredictor instance (no file I/O)."""
         fusion_path = tmp_path / "fusion_model.pt"
-        xgb_path = tmp_path / "xgb_classifier.json"
+        xgb_path = tmp_path / "xgb_classifier.pkl"
         fusion_path.touch()
         xgb_path.touch()
+
+        mock_xgb = MagicMock()
+        mock_xgb.predict_proba.return_value = np.array([[0.05, 0.90, 0.03, 0.02]])
 
         with (
             patch("app.services.ml_predictor.torch.load", return_value={}),
             patch("app.services.ml_predictor.PhishScamSenseFusionModel") as mock_fusion_cls,
-            patch("app.services.ml_predictor.xgb.XGBClassifier") as mock_xgb_cls,
+            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb),
             patch("app.services.ml_predictor.URLTokenizer") as mock_tokenizer_cls,
             patch("app.services.ml_predictor.extract_url_features") as mock_features,
         ):
@@ -158,11 +163,6 @@ class TestMLPredictorPredict:
             mock_fusion = MagicMock()
             mock_fusion.return_value = torch.zeros(1, 192)
             mock_fusion_cls.return_value = mock_fusion
-
-            # XGBoost returns 4-class probabilities
-            mock_xgb = MagicMock()
-            mock_xgb.predict_proba.return_value = np.array([[0.05, 0.90, 0.03, 0.02]])
-            mock_xgb_cls.return_value = mock_xgb
 
             # Tokenizer returns dummy tensors
             mock_tokenizer = MagicMock()

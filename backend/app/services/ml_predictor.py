@@ -10,9 +10,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import pickle
+
 import numpy as np
 import torch
-import xgboost as xgb
 
 # Ensure project root is on sys.path so ml.src can be imported
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -51,10 +52,10 @@ class MLPredictor:
         self.fusion_model.load_state_dict(state_dict)
         self.fusion_model.eval()
 
-        # --- XGBoost classifier (native JSON format) ---
-        xgb_path = exports_dir / "xgb_classifier.json"
-        self.xgb_classifier = xgb.XGBClassifier()
-        self.xgb_classifier.load_model(str(xgb_path))
+        # --- XGBoost classifier (pickle — avoids sklearn tag compat issue) ---
+        xgb_path = exports_dir / "xgb_classifier.pkl"
+        with open(xgb_path, "rb") as f:
+            self.xgb_classifier = pickle.load(f)
 
         # --- DistilBERT tokenizer ---
         self.tokenizer = URLTokenizer()
