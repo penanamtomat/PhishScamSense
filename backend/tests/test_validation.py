@@ -26,7 +26,7 @@ from app.main import app
 # Load validation URLs
 # ---------------------------------------------------------------------------
 
-_VALIDATION_CSV = Path(__file__).resolve().parents[3] / "data" / "raw" / "validation.csv"
+_VALIDATION_CSV = Path(__file__).resolve().parents[3] / "PhishScamSense" / "data" / "raw" / "validation.csv"
 
 CLASS_NAMES = ["benign", "phishing", "malware", "spam"]
 
