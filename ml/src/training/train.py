@@ -1,5 +1,5 @@
 """
-Training pipeline for PhishSense hybrid model.
+Training pipeline for PhishScamSense hybrid model.
 """
 
 import logging
@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from ml.src.features.url_features import extract_url_features
-from ml.src.models.fusion_model import PhishSenseClassifier, PhishSenseFusionModel
+from ml.src.models.fusion_model import PhishScamSenseClassifier, PhishScamSenseFusionModel
 from ml.src.models.nlp_branch import URLTokenizer
 
 logging.basicConfig(level=logging.INFO)
@@ -36,13 +36,13 @@ def prepare_dataset(urls: list[str], labels: list[int]) -> dict:
 
 
 def train_fusion_model(
-    fusion_model: PhishSenseFusionModel,
+    fusion_model: PhishScamSenseFusionModel,
     train_data: dict,
     epochs: int = 10,
     batch_size: int = 32,
     learning_rate: float = 1e-4,
     device: str = "cpu",
-) -> PhishSenseFusionModel:
+) -> PhishScamSenseFusionModel:
     """Pre-train the neural network branches with contrastive/supervised loss."""
     fusion_model = fusion_model.to(device)
     fusion_model.train()
@@ -89,7 +89,7 @@ def train_fusion_model(
 def train_pipeline(
     urls: list[str],
     labels: list[int],
-    experiment_name: str = "phishsense",
+    experiment_name: str = "phishscamsense",
     epochs: int = 10,
 ):
     """Full training pipeline with MLflow tracking."""
@@ -100,7 +100,7 @@ def train_pipeline(
         data = prepare_dataset(urls, labels)
 
         logger.info("Training fusion model...")
-        fusion_model = PhishSenseFusionModel()
+        fusion_model = PhishScamSenseFusionModel()
         mlflow.log_params({
             "epochs": epochs,
             "model_type": "DistilBERT+BiLSTM+Attention+MLP+XGBoost",
@@ -110,7 +110,7 @@ def train_pipeline(
         fusion_model = train_fusion_model(fusion_model, data, epochs=epochs)
 
         logger.info("Training XGBoost classifier...")
-        classifier = PhishSenseClassifier(fusion_model)
+        classifier = PhishScamSenseClassifier(fusion_model)
         classifier.fit(
             data["input_ids"],
             data["attention_mask"],

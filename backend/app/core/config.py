@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "PhishSense"
+    PROJECT_NAME: str = "PhishScamSense"
     API_V1_PREFIX: str = "/api/v1"
 
     # CORS

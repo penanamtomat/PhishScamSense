@@ -9,7 +9,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 default_args = {
-    "owner": "phishsense",
+    "owner": "phishscamsense",
     "depends_on_past": False,
     "email_on_failure": False,
     "retries": 1,
@@ -27,13 +27,13 @@ def ingest_threat_data(**kwargs):
 
 
 def retrain_model(**kwargs):
-    """Retrain the PhishSense model with updated data."""
+    """Retrain the PhishScamSense model with updated data."""
     from ml.src.training.train import train_pipeline
 
     from ml.src.data.data_loader import prepare_training_data
 
     urls, labels = prepare_training_data(include_openphish=True)
-    train_pipeline(urls, labels, experiment_name="phishsense_retrain")
+    train_pipeline(urls, labels, experiment_name="phishscamsense_retrain")
 
 
 def update_bloom_filter(**kwargs):
@@ -43,13 +43,13 @@ def update_bloom_filter(**kwargs):
 
 
 with DAG(
-    "phishsense_retrain",
+    "phishscamsense_retrain",
     default_args=default_args,
-    description="PhishSense model retraining pipeline",
+    description="PhishScamSense model retraining pipeline",
     schedule_interval=timedelta(days=7),
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    tags=["phishsense", "ml"],
+    tags=["phishscamsense", "ml"],
 ) as dag:
     ingest_task = PythonOperator(
         task_id="ingest_threat_data",

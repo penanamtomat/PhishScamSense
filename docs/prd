@@ -1,5 +1,5 @@
 Product Requirement Document (PRD)
-PhishSense: Real-Time Multimodal Phishing Defense using Browser Extension
+PhishScamSense: Real-Time Multimodal Phishing Defense using Browser Extension
 
 1. Visi dan Tujuan Produk
 Membangun sebuah ekstensi peramban dengan latensi minimal yang mampu mendeteksi dan memblokir URL phishing secara real-time. Sistem akan menggunakan arsitektur microservices terdistribusi dan model machine learning hibrida untuk mendeteksi taktik penghindaran tingkat lanjut seperti typosquatting, punycode, serta anomali rekayasa sosial, sembari memastikan pengalaman berselancar pengguna tidak terganggu.

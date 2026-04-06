@@ -1,5 +1,5 @@
 """
-BentoML inference service for PhishSense model.
+BentoML inference service for PhishScamSense model.
 Serves the hybrid model with adaptive micro-batching.
 """
 
@@ -12,10 +12,10 @@ from ml.src.features.url_features import extract_url_features
 from ml.src.models.nlp_branch import URLTokenizer
 
 # Load models from MLflow or local artifacts
-fusion_model_runner = bentoml.pytorch.get("phishsense_fusion:latest").to_runner()
-xgb_runner = bentoml.xgboost.get("phishsense_xgb:latest").to_runner()
+fusion_model_runner = bentoml.pytorch.get("phishscamsense_fusion:latest").to_runner()
+xgb_runner = bentoml.xgboost.get("phishscamsense_xgb:latest").to_runner()
 
-svc = bentoml.Service("phishsense", runners=[fusion_model_runner, xgb_runner])
+svc = bentoml.Service("phishscamsense", runners=[fusion_model_runner, xgb_runner])
 
 tokenizer = URLTokenizer()
 

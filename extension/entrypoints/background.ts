@@ -3,7 +3,7 @@ import { BloomFilter } from "@/lib/bloom-filter";
 let bloomFilter: BloomFilter;
 
 export default defineBackground(() => {
-  console.log("PhishSense background service worker started");
+  console.log("PhishScamSense background service worker started");
 
   // Initialize Bloom Filter with stored data
   initBloomFilter();

@@ -12,7 +12,7 @@ from ml.src.models.nlp_branch import NLPBranch
 from ml.src.models.numerical_branch import MLPBranch
 
 
-class PhishSenseFusionModel(nn.Module):
+class PhishScamSenseFusionModel(nn.Module):
     """
     Hierarchical fusion model that combines:
     1. NLP Branch (DistilBERT + BiLSTM + Attention) for URL text
@@ -53,13 +53,13 @@ class PhishSenseFusionModel(nn.Module):
         return fused
 
 
-class PhishSenseClassifier:
+class PhishScamSenseClassifier:
     """
-    Complete PhishSense classifier:
+    Complete PhishScamSense classifier:
     Neural network feature extractor + XGBoost final classifier.
     """
 
-    def __init__(self, fusion_model: PhishSenseFusionModel):
+    def __init__(self, fusion_model: PhishScamSenseFusionModel):
         self.fusion_model = fusion_model
         self.xgb_classifier = xgb.XGBClassifier(
             n_estimators=300,

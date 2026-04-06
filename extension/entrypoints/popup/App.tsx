@@ -44,7 +44,7 @@ export default function App() {
   return (
     <div className="w-80 p-4 bg-gray-900 text-white">
       <h1 className="text-xl font-bold mb-3 flex items-center gap-2">
-        PhishSense
+        PhishScamSense
       </h1>
 
       <div className="text-xs text-gray-400 mb-3 truncate" title={currentUrl}>

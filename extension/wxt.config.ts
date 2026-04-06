@@ -3,7 +3,7 @@ import { defineConfig } from "wxt";
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: {
-    name: "PhishSense",
+    name: "PhishScamSense",
     description:
       "Real-Time Multimodal Phishing Defense using Browser Extension",
     version: "0.1.0",

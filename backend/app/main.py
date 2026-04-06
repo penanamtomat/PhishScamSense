@@ -5,7 +5,7 @@ from app.api.routes import predict, threats, reports
 from app.core.config import settings
 
 app = FastAPI(
-    title="PhishSense API",
+    title="PhishScamSense API",
     description="Real-Time Multimodal Phishing Defense Backend",
     version="0.1.0",
 )

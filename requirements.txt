@@ -1,4 +1,4 @@
-# PhishSense - All Python dependencies
+# PhishScamSense - All Python dependencies
 # Backend
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
