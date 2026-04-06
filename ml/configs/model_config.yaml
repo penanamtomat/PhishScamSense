@@ -1,0 +1,48 @@
+model:
+  nlp_branch:
+    model_name: "distilbert-base-uncased"
+    output_dim: 128
+    lstm_hidden: 256
+    lstm_layers: 2
+    dropout: 0.3
+    freeze_bert: true
+    max_token_length: 128
+
+  numerical_branch:
+    type: "mlp"  # or "capsnet"
+    input_dim: 24
+    hidden_dims: [128, 64]
+    output_dim: 64
+    dropout: 0.3
+
+  capsnet:
+    input_dim: 24
+    primary_caps: 8
+    capsule_dim: 8
+    output_dim: 64
+
+  xgboost:
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.1
+    objective: "binary:logistic"
+    eval_metric: "logloss"
+
+training:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 0.0001
+  device: "auto"
+  early_stopping_patience: 3
+
+data:
+  include_openphish: true
+  include_phishtank: false
+
+mlflow:
+  experiment_name: "phishsense"
+  tracking_uri: "http://localhost:5000"
+
+bentoml:
+  service_name: "phishsense"
+  port: 3000

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhishSense - Blocked</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-950 text-white flex items-center justify-center min-h-screen">
+    <div class="max-w-md text-center p-8">
+      <div class="text-6xl mb-4">&#x1F6E1;</div>
+      <h1 class="text-2xl font-bold text-red-400 mb-3">
+        Phishing Site Blocked
+      </h1>
+      <p class="text-gray-400 mb-6">
+        PhishSense has detected that this website is a potential phishing threat
+        and has blocked access to protect you.
+      </p>
+      <div class="space-y-3">
+        <button
+          onclick="history.back()"
+          class="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition"
+        >
+          Go Back to Safety
+        </button>
+        <button
+          id="report-btn"
+          class="w-full px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition"
+        >
+          Report as False Positive
+        </button>
+      </div>
+    </div>
+    <script>
+      document.getElementById("report-btn").addEventListener("click", async () => {
+        const params = new URLSearchParams(window.location.search);
+        const blockedUrl = params.get("url");
+        if (!blockedUrl) return;
+
+        const stored = await chrome.storage.local.get("apiBase");
+        const apiBase = stored.apiBase || "http://localhost:8000";
+        await fetch(`${apiBase}/api/v1/reports/false-positive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: blockedUrl }),
+        });
+        alert("Report submitted. Thank you!");
+      });
+    </script>
+  </body>
+</html>

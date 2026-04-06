@@ -1,0 +1,36 @@
+Product Requirement Document (PRD)
+PhishSense: Real-Time Multimodal Phishing Defense using Browser Extension
+
+1. Visi dan Tujuan Produk
+Membangun sebuah ekstensi peramban dengan latensi minimal yang mampu mendeteksi dan memblokir URL phishing secara real-time. Sistem akan menggunakan arsitektur microservices terdistribusi dan model machine learning hibrida untuk mendeteksi taktik penghindaran tingkat lanjut seperti typosquatting, punycode, serta anomali rekayasa sosial, sembari memastikan pengalaman berselancar pengguna tidak terganggu.
+
+2. Fitur dan Kebutuhan Sistem (System Requirements)
+Deteksi Waktu Nyata di Sisi Klien (Zero-Latency Check): Sistem harus menanamkan Bloom Filter secara lokal di dalam memori ekstensi untuk efisiensi ruang dan pencarian konstan tanpa pemanggilan jaringan eksternal untuk URL yang sudah diketahui.
+Pemblokiran dan Pengalihan Dinamis (Manifest V3): Ekstensi harus sepenuhnya patuh pada regulasi Manifest V3 Google Chrome, menggunakan API declarativeNetRequest untuk memutus koneksi dan mengalihkan pengguna ke halaman peringatan internal secara sinkron.
+Pemutakhiran Data Latar Belakang (Background Sync): Memanfaatkan Background Synchronization API untuk mengunduh daftar ancaman terbaru dari backend saat jaringan stabil tanpa mengganggu pengguna.
+Pelaporan Positif Palsu (Feedback Loop): Halaman blokir internal menyediakan modul bagi pengguna untuk melaporkan positif palsu (false positive), yang kemudian diinvestigasi secara otomatis oleh sistem backend.
+Pelatihan Ulang Otonom (Continuous Retraining): Sistem di sisi backend secara berkala menyerap data ancaman terbaru dan laporan kesalahan pengguna untuk melatih ulang model AI tanpa pengawasan manual.
+
+3. Tumpukan Teknologi (Tech Stack) Produksi dan Arsitektur
+
+A. Ekstensi Peramban (Klien)
+Kerangka Kerja Ekstensi: WXT Framework (bertenaga Vite) untuk kompatibilitas lintas peramban dan kepatuhan Manifest V3.
+Antarmuka Pengguna (UI): React dengan TypeScript dan TailwindCSS.
+Struktur Data Pemblokiran Lokal: Counting Bloom Filter untuk manajemen daftar hitam sisi klien.
+
+B. Layanan Backend dan Komunikasi (Microservices)
+API Gateway & Routing: FastAPI (Python) untuk menangani ribuan kueri serentak dengan latensi sangat rendah dan validasi data Pydantic.
+Message Broker: RabbitMQ untuk merutekan payload pemrosesan secara asinkron dari API Gateway ke pekerja komputasi.
+Orkestrasi Tugas Latar Belakang: Celery untuk mengatur investigasi pihak ketiga dan memicu pipa pemrosesan data.
+
+C. Layanan Machine Learning, Arsitektur Hibrida, dan MLOps
+Sistem menggunakan pendekatan Fusi Multimodal (Multimodal Fusion) yang memproses teks dan angka secara terpisah sebelum digabungkan :
+Pemrosesan Bahasa Alami (NLP): DistilBERT digunakan untuk mengekstraksi vektor semantik dari string URL. Keluaran dari DistilBERT kemudian dilewatkan ke lapisan BiLSTM dan mekanisme Attention untuk menangkap dependensi sekuensial dan memberikan bobot pada kata-kata yang mencurigakan.
+Pemrosesan Fitur Numerik/Tabular: Fitur-fitur leksikal dan struktural yang direkayasa (seperti entropi, typosquatting, jumlah digit) diproses menggunakan jaringan saraf Multi-Layer Perceptron (MLP) atau Capsule Neural Networks (CapsNet) untuk mempertahankan hierarki informasi struktural tanpa kehilangan properti spasial.
+Klasifikasi Prediksi Akhir (Classifier): Hasil representasi vektor dari cabang NLP (DistilBERT) dan cabang fitur numerik (MLP/CapsNet) digabungkan (fusi hierarkis) dan diumpankan ke dalam model XGBoost. Algoritma berbasis pohon ekstrem ini bertindak sebagai penentu keputusan akhir untuk mengklasifikasikan probabilitas URL tersebut sebagai ancaman phishing.
+Mesin Inferensi: BentoML dengan fitur adaptive micro-batching untuk menyajikan model hibrida ini di lingkungan produksi dengan throughput tinggi.
+Pelacakan dan Orkestrasi MLOps: MLflow untuk registrasi versi model dan pelacakan metrik eksperimen, dikelola oleh Apache Airflow untuk mengotomatisasi pipa penyerapan data dan retraining.
+
+D. Intelijen Ancaman Pihak Ketiga (Integrasi API)
+OpenPhish, PhishTank, & AlienVault OTX: Sumber umpan ancaman (threat intelligence feeds) untuk memperkaya dataset pelatihan dengan operasi phishing zero-day terbaru.
+VirusTotal API v3 & Google Safe Browsing API v4: Diutilisasi oleh layanan Celery untuk memvalidasi laporan false positive secara otonom sebelum melatih ulang model klasifikasi akhir.
