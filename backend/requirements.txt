@@ -1,7 +1,20 @@
+# Backend dependencies for PhishScamSense
+
+# API framework
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+
+# Data validation
 pydantic==2.10.3
 pydantic-settings==2.7.0
+
+# Async HTTP client (threat intel calls)
 httpx==0.28.1
+requests==2.32.3
+
+# Task queue
 celery==5.4.0
+redis==5.2.1             # Celery broker/backend
+
+# Environment
 python-dotenv==1.0.1
