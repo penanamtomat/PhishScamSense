@@ -1,6 +1,6 @@
 import { BloomFilter } from "@/lib/bloom-filter";
 
-let bloomFilter: BloomFilter;
+let bloomFilter: BloomFilter | null = null;
 
 export default defineBackground(() => {
   console.log("PhishScamSense background service worker started");
@@ -20,24 +20,28 @@ export default defineBackground(() => {
   // Listen for URL check requests from content scripts or popup
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "CHECK_URL") {
-      const isSuspicious = bloomFilter.contains(message.url);
-      if (isSuspicious) {
-        verifyWithBackend(message.url).then((result) => {
-          sendResponse(result);
-        });
-        return true; // async response
+      // Fast-path: if we have a loaded bloom filter and it definitively says
+      // this URL is NOT a known threat, skip the backend call.
+      if (bloomFilter !== null && !bloomFilter.contains(message.url)) {
+        sendResponse({ phishing: false, confidence: 0 });
+        return;
       }
-      sendResponse({ phishing: false });
+
+      // Otherwise always verify with the backend ML model.
+      verifyWithBackend(message.url).then((result) => {
+        sendResponse(result);
+      });
+      return true; // async response
     }
   });
 });
 
 async function initBloomFilter() {
-  bloomFilter = new BloomFilter(1_000_000, 7);
-
   const stored = await browser.storage.local.get("bloomFilterData");
-  if (stored.bloomFilterData) {
-    bloomFilter.loadFromData(stored.bloomFilterData);
+  const data = stored.bloomFilterData as number[] | undefined;
+  if (data && data.length > 0) {
+    bloomFilter = new BloomFilter(data.length, 7);
+    bloomFilter.loadFromData(data);
     console.log("Bloom filter loaded from storage");
   } else {
     await syncThreatList();
@@ -51,18 +55,28 @@ async function syncThreatList() {
     if (!response.ok) throw new Error("Failed to fetch threat list");
 
     const data = await response.json();
-    bloomFilter.loadFromData(data.filter);
 
-    await browser.storage.local.set({ bloomFilterData: data.filter });
-    console.log("Threat list synced successfully");
+    // Only use the filter if it has actual data
+    if (Array.isArray(data.filter) && data.filter.length > 0) {
+      bloomFilter = new BloomFilter(data.filter.length, data.num_hashes ?? 7);
+      bloomFilter.loadFromData(data.filter);
+      await browser.storage.local.set({ bloomFilterData: data.filter });
+      console.log(`Threat list synced: ${data.num_items ?? "?"} threat URLs`);
+    } else {
+      // No valid filter data — keep bloomFilter null so all URLs go to backend
+      bloomFilter = null;
+      console.log("No bloom filter data available — all URLs will be verified by ML model");
+    }
   } catch (error) {
     console.error("Failed to sync threat list:", error);
+    // Keep bloomFilter null on error so the backend is always consulted
+    bloomFilter = null;
   }
 }
 
 async function verifyWithBackend(
   url: string
-): Promise<{ phishing: boolean; confidence: number }> {
+): Promise<{ phishing: boolean; confidence: number; threat_type?: string }> {
   try {
     const API_BASE = await getApiBase();
     const response = await fetch(`${API_BASE}/api/v1/predict`, {
@@ -80,5 +94,5 @@ async function verifyWithBackend(
 
 async function getApiBase(): Promise<string> {
   const stored = await browser.storage.local.get("apiBase");
-  return stored.apiBase || "http://localhost:8000";
+  return (stored.apiBase as string | undefined) || "http://localhost:8000";
 }
