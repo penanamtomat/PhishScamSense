@@ -37,6 +37,8 @@ extension/.wxt/
 *.h5
 mlruns/
 bentoml/
+ml/checkpoints/
+ml/exports/
 
 # Data
 data/raw/*
@@ -46,3 +48,6 @@ data/processed/*
 
 # Docker
 *.log
+
+# Claude
+.claude/
