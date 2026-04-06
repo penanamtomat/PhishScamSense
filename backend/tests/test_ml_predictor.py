@@ -1,9 +1,9 @@
 """
 Unit tests for app.services.ml_predictor and ml.src.features.url_features.
 
-These tests do NOT load the actual PyTorch / XGBoost models.
-MLPredictor itself is tested via a mock; the feature extractor is tested
-directly since it has no heavy dependencies.
+Heavy ML imports (torch, transformers, xgboost) are lazy inside MLPredictor.__init__,
+so we bypass __init__ via object.__new__ for predict() tests, and use sys.modules
+patching for the init test.
 """
 
 import sys
@@ -11,7 +11,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 import torch
 
 # Ensure project root on path (mirrors what ml_predictor.py does)
@@ -20,6 +19,50 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from ml.src.features.url_features import extract_url_features
+from app.services.ml_predictor import MLPredictor
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_predictor(proba: np.ndarray | None = None) -> MLPredictor:
+    """
+    Create a MLPredictor without calling __init__ (bypasses heavy imports).
+    Attributes are set manually to match what __init__ would produce.
+    """
+    if proba is None:
+        proba = np.array([[0.05, 0.90, 0.03, 0.02]])
+
+    predictor = object.__new__(MLPredictor)
+
+    # torch reference
+    predictor._torch = torch
+    predictor._np = np
+
+    # Feature extractor
+    _fake_features = {f"feat_{i}": float(i) for i in range(23)}
+    predictor._extract_url_features = MagicMock(return_value=_fake_features)
+
+    # Fusion model: returns (1, 192) tensor
+    mock_fusion = MagicMock()
+    mock_fusion.return_value = torch.zeros(1, 192)
+    predictor.fusion_model = mock_fusion
+
+    # XGBoost
+    mock_xgb = MagicMock()
+    mock_xgb.predict_proba.return_value = proba
+    predictor.xgb_classifier = mock_xgb
+
+    # Tokenizer
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.tokenize.return_value = {
+        "input_ids": torch.zeros(1, 10, dtype=torch.long),
+        "attention_mask": torch.ones(1, 10, dtype=torch.long),
+    }
+    predictor.tokenizer = mock_tokenizer
+
+    return predictor
 
 
 # ---------------------------------------------------------------------------
@@ -56,8 +99,7 @@ class TestExtractUrlFeatures:
 
     def test_url_length(self):
         url = "https://example.com"
-        features = extract_url_features(url)
-        assert features["url_length"] == len(url)
+        assert extract_url_features(url)["url_length"] == len(url)
 
     def test_dot_count(self):
         assert extract_url_features("https://sub.example.co.uk/path")["num_dots"] == 3
@@ -107,118 +149,87 @@ class TestExtractUrlFeatures:
 
 
 # ---------------------------------------------------------------------------
-# MLPredictor (constructor + predict) — mocked heavy dependencies
+# MLPredictor.__init__ — uses sys.modules patching for lazy imports
 # ---------------------------------------------------------------------------
 
 
 class TestMLPredictorInit:
     def test_loads_models_from_exports_dir(self, tmp_path):
-        """MLPredictor.__init__ loads fusion_model.pt via torch and xgb_classifier.pkl via pickle."""
-        fusion_path = tmp_path / "fusion_model.pt"
-        xgb_path = tmp_path / "xgb_classifier.pkl"
-        fusion_path.touch()
-        xgb_path.touch()
+        """MLPredictor.__init__ loads fusion_model.pt and xgb_classifier.pkl."""
+        (tmp_path / "fusion_model.pt").touch()
+        (tmp_path / "xgb_classifier.pkl").touch()
+
+        mock_torch = MagicMock()
+        mock_torch.load.return_value = {}
+
+        mock_fusion_instance = MagicMock()
+        mock_fusion_cls = MagicMock(return_value=mock_fusion_instance)
 
         mock_xgb_instance = MagicMock()
 
-        with (
-            patch("app.services.ml_predictor.torch.load") as mock_torch_load,
-            patch("app.services.ml_predictor.PhishScamSenseFusionModel") as mock_fusion_cls,
-            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb_instance),
-            patch("app.services.ml_predictor.URLTokenizer"),
-        ):
-            mock_fusion = MagicMock()
-            mock_fusion_cls.return_value = mock_fusion
-            mock_torch_load.return_value = {}
+        # Patch the lazy imports by pre-populating sys.modules with mocks
+        # so that `import torch` inside __init__ resolves to our mock.
+        modules_patch = {
+            "torch": mock_torch,
+            "numpy": MagicMock(),
+        }
 
-            from app.services.ml_predictor import MLPredictor
+        with (
+            patch.dict(sys.modules, modules_patch),
+            patch("ml.src.models.fusion_model.PhishScamSenseFusionModel", mock_fusion_cls),
+            patch("ml.src.models.nlp_branch.URLTokenizer"),
+            patch("ml.src.features.url_features.extract_url_features"),
+            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb_instance),
+        ):
             predictor = MLPredictor(tmp_path)
 
-            mock_torch_load.assert_called_once()
-            mock_fusion.load_state_dict.assert_called_once_with({})
-            mock_fusion.eval.assert_called_once()
-            assert predictor.xgb_classifier is mock_xgb_instance
+        mock_torch.load.assert_called_once()
+        mock_fusion_instance.load_state_dict.assert_called_once_with({})
+        mock_fusion_instance.eval.assert_called_once()
+        assert predictor.xgb_classifier is mock_xgb_instance
+
+
+# ---------------------------------------------------------------------------
+# MLPredictor.predict — fast tests via _make_predictor helper
+# ---------------------------------------------------------------------------
 
 
 class TestMLPredictorPredict:
-    @pytest.fixture
-    def predictor(self, tmp_path):
-        """Return a fully mocked MLPredictor instance (no file I/O)."""
-        fusion_path = tmp_path / "fusion_model.pt"
-        xgb_path = tmp_path / "xgb_classifier.pkl"
-        fusion_path.touch()
-        xgb_path.touch()
-
-        mock_xgb = MagicMock()
-        mock_xgb.predict_proba.return_value = np.array([[0.05, 0.90, 0.03, 0.02]])
-
-        with (
-            patch("app.services.ml_predictor.torch.load", return_value={}),
-            patch("app.services.ml_predictor.PhishScamSenseFusionModel") as mock_fusion_cls,
-            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb),
-            patch("app.services.ml_predictor.URLTokenizer") as mock_tokenizer_cls,
-            patch("app.services.ml_predictor.extract_url_features") as mock_features,
-        ):
-            # Fusion model returns a (1, 192) tensor
-            mock_fusion = MagicMock()
-            mock_fusion.return_value = torch.zeros(1, 192)
-            mock_fusion_cls.return_value = mock_fusion
-
-            # Tokenizer returns dummy tensors
-            mock_tokenizer = MagicMock()
-            mock_tokenizer.tokenize.return_value = {
-                "input_ids": torch.zeros(1, 10, dtype=torch.long),
-                "attention_mask": torch.ones(1, 10, dtype=torch.long),
-            }
-            mock_tokenizer_cls.return_value = mock_tokenizer
-
-            # Feature extractor returns 23 zero features
-            mock_features.return_value = {f"feat_{i}": 0.0 for i in range(23)}
-
-            from app.services.ml_predictor import MLPredictor
-            inst = MLPredictor(tmp_path)
-            # Bind the mocked extract_url_features so assertions work
-            inst._mock_features = mock_features
-            yield inst
-
-    def test_predict_returns_all_fields(self, predictor):
-        result = predictor.predict("http://phish.example.com")
+    def test_predict_returns_all_fields(self):
+        result = _make_predictor().predict("http://phish.example.com")
         assert {"phishing", "confidence", "label", "threat_type", "features"} == set(result.keys())
 
-    def test_predict_phishing_class(self, predictor):
-        result = predictor.predict("http://phish.example.com")
+    def test_predict_phishing_class(self):
+        result = _make_predictor(np.array([[0.05, 0.90, 0.03, 0.02]])).predict("http://phish.example.com")
         assert result["phishing"] is True
         assert result["label"] == 1
         assert result["threat_type"] == "phishing"
 
-    def test_predict_confidence_is_float(self, predictor):
-        result = predictor.predict("http://phish.example.com")
+    def test_predict_confidence_is_float(self):
+        result = _make_predictor().predict("http://phish.example.com")
         assert isinstance(result["confidence"], float)
         assert 0.0 <= result["confidence"] <= 1.0
 
-    def test_predict_benign_class(self, predictor):
-        predictor.xgb_classifier.predict_proba.return_value = np.array([[0.97, 0.01, 0.01, 0.01]])
-        result = predictor.predict("https://google.com")
+    def test_predict_benign_class(self):
+        result = _make_predictor(np.array([[0.97, 0.01, 0.01, 0.01]])).predict("https://google.com")
         assert result["phishing"] is False
         assert result["label"] == 0
         assert result["threat_type"] == "benign"
 
-    def test_predict_malware_class(self, predictor):
-        predictor.xgb_classifier.predict_proba.return_value = np.array([[0.03, 0.04, 0.91, 0.02]])
-        result = predictor.predict("http://malware.example.com")
+    def test_predict_malware_class(self):
+        result = _make_predictor(np.array([[0.03, 0.04, 0.91, 0.02]])).predict("http://malware.example.com")
         assert result["phishing"] is True
         assert result["label"] == 2
         assert result["threat_type"] == "malware"
 
-    def test_predict_spam_class(self, predictor):
-        predictor.xgb_classifier.predict_proba.return_value = np.array([[0.05, 0.05, 0.05, 0.85]])
-        result = predictor.predict("http://spam.example.com")
+    def test_predict_spam_class(self):
+        result = _make_predictor(np.array([[0.05, 0.05, 0.05, 0.85]])).predict("http://spam.example.com")
         assert result["phishing"] is True
         assert result["label"] == 3
         assert result["threat_type"] == "spam"
 
-    def test_features_dict_returned(self, predictor):
-        result = predictor.predict("https://example.com")
+    def test_features_dict_returned(self):
+        result = _make_predictor().predict("https://example.com")
         assert isinstance(result["features"], dict)
         assert len(result["features"]) == 23
 

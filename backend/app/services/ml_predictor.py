@@ -3,28 +3,25 @@ Local ML predictor that loads models directly from ml/exports/.
 Replaces the external BentoML service call with an in-process inference.
 
 Class labels: 0=benign  1=phishing  2=malware  3=spam
+
+Heavy ML packages (torch, transformers, xgboost) are imported lazily
+inside MLPredictor.__init__ so that the FastAPI app can start normally
+even when those packages are absent from the environment.
 """
 
 import logging
+import pickle
 import sys
 from pathlib import Path
 from typing import Optional
 
-import pickle
+logger = logging.getLogger(__name__)
 
-import numpy as np
-import torch
-
-# Ensure project root is on sys.path so ml.src can be imported
+# Project root — used to put ml.src on sys.path at import time
+# (the actual heavy imports are deferred to MLPredictor.__init__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from ml.src.features.url_features import extract_url_features  # noqa: E402
-from ml.src.models.fusion_model import PhishScamSenseFusionModel  # noqa: E402
-from ml.src.models.nlp_branch import URLTokenizer  # noqa: E402
-
-logger = logging.getLogger(__name__)
 
 CLASS_NAMES = ["benign", "phishing", "malware", "spam"]
 
@@ -40,6 +37,18 @@ class MLPredictor:
 
     def __init__(self, exports_dir: Path) -> None:
         logger.info("Loading ML models from %s", exports_dir)
+
+        # Lazy imports — keeps FastAPI startable even without ML packages
+        import numpy as np  # noqa: F401 (stored on self below)
+        import torch
+        from ml.src.features.url_features import extract_url_features
+        from ml.src.models.fusion_model import PhishScamSenseFusionModel
+        from ml.src.models.nlp_branch import URLTokenizer
+
+        # Keep references so predict() doesn't need to re-import
+        self._np = np
+        self._torch = torch
+        self._extract_url_features = extract_url_features
 
         # --- Fusion model (PyTorch state dict) ---
         fusion_path = exports_dir / "fusion_model.pt"
@@ -75,8 +84,11 @@ class MLPredictor:
                 "features":    dict   – 23 lexical features extracted from the URL
             }
         """
+        torch = self._torch
+        np = self._np
+
         tokens = self.tokenizer.tokenize([url])
-        features = extract_url_features(url)
+        features = self._extract_url_features(url)
         numerical = torch.tensor([list(features.values())], dtype=torch.float32)
 
         with torch.no_grad():

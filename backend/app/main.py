@@ -11,17 +11,41 @@ from app.services.ml_predictor import get_predictor
 
 logger = logging.getLogger(__name__)
 
+# Resolve exports path relative to this file's location so it works
+# regardless of where uvicorn is started from.
+# backend/app/main.py  → parents[1] = backend/  → parents[2] = project root
+_HERE = Path(__file__).resolve().parent          # backend/app/
+_BACKEND_ROOT = _HERE.parent                     # backend/
+_PROJECT_ROOT = _BACKEND_ROOT.parent             # PhishScamSense/
+
+
+def _resolve_exports_dir() -> Path:
+    """Return the absolute path to ml/exports/, tolerating relative config."""
+    configured = Path(settings.MODEL_EXPORTS_PATH)
+    if configured.is_absolute():
+        return configured
+    # Try relative to project root first, then CWD as fallback
+    candidate = _PROJECT_ROOT / configured
+    if candidate.exists():
+        return candidate
+    return Path.cwd() / configured
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    exports_dir = Path(settings.MODEL_EXPORTS_PATH)
+    exports_dir = _resolve_exports_dir()
     if exports_dir.exists():
         try:
             get_predictor(exports_dir)
+            logger.info("ML models loaded from %s", exports_dir)
         except Exception as exc:
-            logger.warning("Could not load ML models: %s", exc)
+            logger.warning("Could not load ML models from %s: %s", exports_dir, exc)
     else:
-        logger.warning("MODEL_EXPORTS_PATH %s does not exist — predictions disabled", exports_dir)
+        logger.warning(
+            "MODEL_EXPORTS_PATH '%s' (resolved: %s) does not exist — predictions disabled",
+            settings.MODEL_EXPORTS_PATH,
+            exports_dir,
+        )
     yield
 
 
