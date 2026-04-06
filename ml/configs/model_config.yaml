@@ -10,33 +10,38 @@ model:
 
   numerical_branch:
     type: "mlp"  # or "capsnet"
-    input_dim: 24
+    input_dim: 23
     hidden_dims: [128, 64]
     output_dim: 64
     dropout: 0.3
 
   capsnet:
-    input_dim: 24
+    input_dim: 23
     primary_caps: 8
     capsule_dim: 8
     output_dim: 64
 
   xgboost:
-    n_estimators: 300
+    n_estimators: 500
     max_depth: 6
     learning_rate: 0.1
-    objective: "binary:logistic"
-    eval_metric: "logloss"
+    objective: "multi:softmax"
+    num_class: 4          # 0=benign  1=phishing  2=malware  3=spam
+    eval_metric: "mlogloss"
+    early_stopping_rounds: 15
 
 training:
-  epochs: 10
+  epochs: 5
   batch_size: 32
   learning_rate: 0.0001
   device: "auto"
   early_stopping_patience: 3
 
 data:
-  include_openphish: true
+  source: "CIC-Bell-DNS2021"
+  classes: ["benign", "phishing", "malware", "spam"]
+  max_benign: 100000      # subsample from ~988k; set 0 to use all
+  include_openphish: false
   include_phishtank: false
 
 mlflow:
