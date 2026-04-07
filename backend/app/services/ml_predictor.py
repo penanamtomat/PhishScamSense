@@ -12,6 +12,7 @@ even when those packages are absent from the environment.
 import logging
 import pickle
 import sys
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -61,10 +62,12 @@ class MLPredictor:
         self.fusion_model.load_state_dict(state_dict)
         self.fusion_model.eval()
 
-        # --- XGBoost classifier (pickle — avoids sklearn tag compat issue) ---
+        # --- XGBoost classifier (pickle with version warning suppressed) ---
         xgb_path = exports_dir / "xgb_classifier.pkl"
-        with open(xgb_path, "rb") as f:
-            self.xgb_classifier = pickle.load(f)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
+            with open(xgb_path, "rb") as f:
+                self.xgb_classifier = pickle.load(f)
 
         # --- DistilBERT tokenizer ---
         self.tokenizer = URLTokenizer()
