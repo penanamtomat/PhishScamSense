@@ -25,6 +25,10 @@ transformers>=4.35.0
 xgboost>=2.0.0
 numpy>=1.24.0
 
+# Feature extraction
+beautifulsoup4>=4.12.0    # content features: HTML DOM parsing
+python-whois>=0.9.0       # external features: WHOIS domain age (optional)
+
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.24.0

@@ -105,6 +105,8 @@ def client(mock_predictor):
 @pytest.fixture
 def client_no_model():
     """TestClient with no predictor loaded (simulates model not ready)."""
-    ml_predictor_module.set_predictor(None)
     with TestClient(app) as c:
+        # Set None AFTER lifespan runs (lifespan loads the real model on entry)
+        ml_predictor_module.set_predictor(None)
         yield c
+    ml_predictor_module.set_predictor(None)

@@ -13,6 +13,7 @@ venv/
 # Environment
 .env
 .env.local
+.env.example
 
 # IDE
 .vscode/
@@ -29,25 +30,26 @@ node_modules/
 extension/.output/
 extension/.wxt/
 
-# ML artifacts
+# ML model artifacts — large binaries, not committed
 *.pt
 *.pth
 *.pkl
 *.joblib
 *.h5
+*.json.bak
 mlruns/
 bentoml/
 ml/checkpoints/
 ml/exports/
 
-# Data
-data/raw/*
-data/processed/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
+# Data — all contents ignored (top-level data/ directory only)
+/data/
 
-# Docker
+# Logs
 *.log
 
 # Claude
 .claude/
+
+# Reference scripts (third-party, not maintained here)
+scripts/

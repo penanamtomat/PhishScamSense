@@ -14,8 +14,5 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    task_routes={
-        "app.workers.tasks.investigate_false_positive": {"queue": "investigation"},
-        "app.workers.tasks.retrain_model": {"queue": "training"},
-    },
+
 )

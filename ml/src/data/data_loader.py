@@ -38,7 +38,7 @@ def load_cic_bell_dns2021(
     urls: list[str] = []
     labels: list[int] = []
 
-    # benign (label=0) — one URL per line
+    # benign (label=0) — one URL per line (may be bare domains without scheme)
     benign_path = data_dir / "benign_domains.csv"
     if benign_path.exists():
         benign_urls: list[str] = []
@@ -46,7 +46,75 @@ def load_cic_bell_dns2021(
             for line in f:
                 url = line.strip()
                 if url:
+                    if not url.startswith(("http://", "https://", "ftp://")):
+                        url = "https://" + url  # real benign sites use HTTPS
                     benign_urls.append(url)
+        # Add www. variants so the model sees both "example.com" and
+        # "www.example.com" as benign (browsers often navigate to www.).
+        www_variants = [
+            u.replace("https://", "https://www.", 1)
+            for u in benign_urls
+            if not u.startswith("https://www.")
+        ]
+        # Add subdomain variants so the model sees common legitimate service
+        # subdomains (mail., accounts., drive., etc.) as benign.
+        # Without these, any URL with a subdomain looks suspicious because
+        # the raw CIC benign set contains only bare domains.
+        # Subdomain variants — use only neutral, non-suspicious subdomains.
+        # Avoid phish-hint words (login, secure, auth) to prevent teaching the
+        # model that suspicious subdomains are benign.
+        _common_subdomains = [
+            "mail", "accounts", "drive", "docs", "calendar", "maps",
+            "shop", "store", "blog", "news", "video", "mobile", "m",
+            "cdn", "static", "assets", "media", "images", "api",
+            "www2", "beta", "dev", "support", "help",
+        ]
+        rng_sub = random.Random(seed + 2)
+        # 3 random subdomain variants per benign domain
+        subdomain_variants = [
+            u.replace("https://", f"https://{rng_sub.choice(_common_subdomains)}.", 1)
+            for _ in range(3)
+            for u in benign_urls
+            if not u.startswith("https://www.")
+        ]
+        # Path variants — add realistic paths to benign bare domains so the model
+        # learns that paths are not inherently phishing signals.
+        # Deliberately excludes phish-hint words (login, secure, etc.) to keep
+        # the training signal clean: phish_hints_count > 0 should still correlate
+        # with phishing, just not exclusively.
+        _common_paths = [
+            # ---- plain paths (no query string) ----
+            "/", "/index.html", "/index.php", "/home", "/about", "/about-us",
+            "/contact", "/contact-us", "/products", "/services", "/news",
+            "/blog", "/blog/post/1", "/faq", "/help", "/privacy", "/terms",
+            "/page/1", "/page/2", "/category/items", "/article/123",
+            "/user/profile", "/settings", "/sitemap.xml", "/robots.txt",
+            "/static/main.js", "/assets/style.css", "/images/logo.png",
+            "/api/v1/data", "/cdn-cgi/trace",
+            # ---- query-string paths (critical: teaches model that ?key=val is benign) ----
+            "/search?q=test", "/search?q=hello+world", "/search?q=python+tutorial",
+            "/?themeRefresh=1", "/?theme=dark", "/?lang=en", "/?lang=id",
+            "/?ref=home", "/?ref=nav", "/?source=nav", "/?source=google",
+            "/?tab=readme", "/?tab=issues", "/?tab=code",
+            "/?sort=newest", "/?sort=popular", "/?page=1", "/?page=2",
+            "/watch?v=abc123", "/watch?v=xyz456&t=30",
+            "/view?id=456", "/article?id=789", "/post?slug=hello-world",
+            "/products?category=electronics", "/news?page=2&sort=date",
+            "/profile?id=12345", "/user?name=john",
+            "/?utm_source=google&utm_medium=cpc",
+            "/?utm_source=newsletter&utm_campaign=weekly",
+            "/api/v1/data?format=json", "/feed?type=rss",
+            "/?v=3&q=main", "/?action=view&id=1",
+        ]
+        rng_path = random.Random(seed + 3)
+        # 4 random path variants per benign domain — enough to cover query-string patterns
+        path_variants = [
+            u.rstrip("/") + rng_path.choice(_common_paths)
+            for _ in range(4)
+            for u in benign_urls
+        ]
+        benign_urls = benign_urls + www_variants + subdomain_variants + path_variants
+
         if max_benign is not None and len(benign_urls) > max_benign:
             rng = random.Random(seed)
             benign_urls = rng.sample(benign_urls, max_benign)
@@ -73,7 +141,7 @@ def load_cic_bell_dns2021(
     else:
         logger.warning(f"phishing_domains.csv not found in {data_dir}")
 
-    # malware (label=2) — one URL per line
+    # malware (label=2) — one URL per line (may be bare domains without scheme)
     malware_path = data_dir / "malware_domains.csv"
     if malware_path.exists():
         count = 0
@@ -81,6 +149,8 @@ def load_cic_bell_dns2021(
             for line in f:
                 url = line.strip()
                 if url:
+                    if not url.startswith(("http://", "https://", "ftp://")):
+                        url = "http://" + url
                     urls.append(url)
                     labels.append(2)
                     count += 1
@@ -88,7 +158,7 @@ def load_cic_bell_dns2021(
     else:
         logger.warning(f"malware_domains.csv not found in {data_dir}")
 
-    # spam (label=3) — one URL per line
+    # spam (label=3) — one URL per line (may be bare domains without scheme)
     spam_path = data_dir / "spam_domains.csv"
     if spam_path.exists():
         count = 0
@@ -96,6 +166,8 @@ def load_cic_bell_dns2021(
             for line in f:
                 url = line.strip()
                 if url:
+                    if not url.startswith(("http://", "https://", "ftp://")):
+                        url = "http://" + url
                     urls.append(url)
                     labels.append(3)
                     count += 1

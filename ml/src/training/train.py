@@ -27,7 +27,7 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
 from ml.src.data.data_loader import load_cic_bell_dns2021
-from ml.src.features.url_features import extract_url_features
+from ml.src.features.feature_extractor import extract_features
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,16 +43,24 @@ CLASS_NAMES = ["benign", "phishing", "malware", "spam"]
 # Feature extraction
 # ---------------------------------------------------------------------------
 
-def extract_features_batch(urls: list[str]) -> np.ndarray:
-    """Extract numerical URL features for a list of URLs."""
+def extract_features_batch(urls: list[str], fetch_content: bool = False) -> np.ndarray:
+    """
+    Extract 88 features for a list of URLs.
+
+    fetch_content=False (default): URL-only features (fast, no network I/O).
+      Content features are all 0; external features are all 0/-1.
+    fetch_content=True: fetches each page and computes content + DNS features
+      (very slow — use only when building a page-content training dataset).
+    """
+    from ml.src.features.feature_extractor import FEATURE_COUNT
     logger.info(f"Extracting features for {len(urls):,} URLs…")
     rows = []
     for i, url in enumerate(urls):
         try:
-            feat = extract_url_features(url)
+            feat = extract_features(url, html=None, compute_external=False)
             rows.append(list(feat.values()))
         except Exception:
-            rows.append([0.0] * 23)
+            rows.append([0.0] * FEATURE_COUNT)
         if (i + 1) % 25_000 == 0:
             logger.info(f"  {i + 1:,}/{len(urls):,}")
     return np.array(rows, dtype=np.float32)
@@ -222,14 +230,27 @@ def save_artifacts(output_dir: Path, mode: str, **artifacts) -> dict:
     saved: dict[str, str] = {}
 
     if mode == "xgboost":
-        stamp_path = output_dir / f"xgb_classifier_{ts}.pkl"
-        latest_path = output_dir / "xgb_classifier_latest.pkl"
-        with open(stamp_path, "wb") as f:
-            pickle.dump(artifacts["clf"], f)
-        with open(latest_path, "wb") as f:
-            pickle.dump(artifacts["clf"], f)
-        logger.info(f"Saved XGBoost model → {stamp_path}")
-        saved["xgb_classifier"] = str(stamp_path)
+        # Save as native XGBoost JSON (avoids pickle cross-version warnings)
+        json_stamp = output_dir / f"xgb_classifier_{ts}.json"
+        json_active = output_dir / "xgb_classifier.json"
+        artifacts["clf"].save_model(str(json_stamp))
+        artifacts["clf"].save_model(str(json_active))
+        logger.info(f"Saved XGBoost model → {json_stamp}")
+        saved["xgb_classifier"] = str(json_stamp)
+
+        # Keep pickle copies for compatibility
+        pkl_stamp = output_dir / f"xgb_classifier_{ts}.pkl"
+        pkl_latest = output_dir / "xgb_classifier_latest.pkl"
+        pkl_active = output_dir / "xgb_classifier.pkl"
+        for dst in (pkl_stamp, pkl_latest, pkl_active):
+            with open(dst, "wb") as f:
+                pickle.dump(artifacts["clf"], f)
+
+        # Remove stale fusion model so ml_predictor uses xgboost-only mode
+        stale_fusion = output_dir / "fusion_model.pt"
+        if stale_fusion.exists():
+            stale_fusion.rename(output_dir / f"fusion_model_archived_{ts}.pt")
+            logger.info("Archived stale fusion model (xgboost-only mode active)")
 
     else:  # neural
         import torch
@@ -286,6 +307,12 @@ def parse_args():
         default=100_000,
         help="Max benign samples to load (0 = all ~988k; training will be slow)",
     )
+    p.add_argument(
+        "--samples-per-class",
+        type=int,
+        default=0,
+        help="Cap each class to this many samples for balanced training (0 = no cap)",
+    )
     p.add_argument("--test-size", type=float, default=0.15, help="Fraction for test set")
     p.add_argument("--val-size", type=float, default=0.10, help="Fraction for validation set")
     p.add_argument("--epochs", type=int, default=5, help="Neural training epochs")
@@ -293,6 +320,27 @@ def parse_args():
     p.add_argument("--lr", type=float, default=1e-4, help="Neural learning rate")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
+
+
+def _balance_dataset(
+    urls: list[str],
+    labels: list[int],
+    samples_per_class: int,
+    seed: int,
+) -> tuple[list[str], list[int]]:
+    """Subsample each class to at most *samples_per_class* entries."""
+    import random
+    rng = random.Random(seed)
+    per_class: dict[int, list[str]] = {}
+    for url, lbl in zip(urls, labels):
+        per_class.setdefault(lbl, []).append(url)
+    balanced_urls, balanced_labels = [], []
+    for lbl, url_list in sorted(per_class.items()):
+        sample = rng.sample(url_list, min(samples_per_class, len(url_list)))
+        balanced_urls.extend(sample)
+        balanced_labels.extend([lbl] * len(sample))
+        logger.info(f"  {CLASS_NAMES[lbl]:12s}: {len(sample):,} (from {len(url_list):,})")
+    return balanced_urls, balanced_labels
 
 
 def main():
@@ -307,6 +355,13 @@ def main():
     if not urls_all:
         logger.error("No data loaded — check --data-dir path.")
         sys.exit(1)
+
+    # ---- Optional per-class balance ----------------------------------------
+    if args.samples_per_class > 0:
+        logger.info(f"Balancing to {args.samples_per_class:,} samples per class…")
+        urls_all, labels_all = _balance_dataset(
+            urls_all, labels_all, args.samples_per_class, args.seed
+        )
 
     urls_arr = np.array(urls_all, dtype=object)
     y_arr = np.array(labels_all, dtype=np.int32)

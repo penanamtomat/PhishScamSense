@@ -15,7 +15,7 @@ async def predict_url(request: PredictionRequest):
         raise HTTPException(status_code=503, detail="ML model not loaded")
 
     try:
-        result = predictor.predict(request.url)
+        result = predictor.predict(request.url, html=request.html)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")
 

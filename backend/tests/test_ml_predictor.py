@@ -44,23 +44,16 @@ def _make_predictor(proba: np.ndarray | None = None) -> MLPredictor:
     _fake_features = {f"feat_{i}": float(i) for i in range(23)}
     predictor._extract_url_features = MagicMock(return_value=_fake_features)
 
-    # Fusion model: returns (1, 192) tensor
-    mock_fusion = MagicMock()
-    mock_fusion.return_value = torch.zeros(1, 192)
-    predictor.fusion_model = mock_fusion
+    # XGBoost-only mode via xgb_classifier (no fusion model or booster needed)
+    predictor.fusion_model = None
+    predictor.tokenizer = None
+    predictor._neural_mode = False
+    predictor._xgb_booster = None  # use xgb_classifier path
 
     # XGBoost
     mock_xgb = MagicMock()
     mock_xgb.predict_proba.return_value = proba
     predictor.xgb_classifier = mock_xgb
-
-    # Tokenizer
-    mock_tokenizer = MagicMock()
-    mock_tokenizer.tokenize.return_value = {
-        "input_ids": torch.zeros(1, 10, dtype=torch.long),
-        "attention_mask": torch.ones(1, 10, dtype=torch.long),
-    }
-    predictor.tokenizer = mock_tokenizer
 
     return predictor
 
@@ -154,39 +147,47 @@ class TestExtractUrlFeatures:
 
 
 class TestMLPredictorInit:
-    def test_loads_models_from_exports_dir(self, tmp_path):
-        """MLPredictor.__init__ loads fusion_model.pt and xgb_classifier.pkl."""
-        (tmp_path / "fusion_model.pt").touch()
-        (tmp_path / "xgb_classifier.pkl").touch()
+    def _make_tiny_xgb(self, path: Path):
+        """Save a minimal trained XGBoost model to *path* (JSON format)."""
+        import xgboost as xgb
+        clf = xgb.XGBClassifier(n_estimators=1, num_class=4, objective="multi:softmax")
+        clf.fit(np.random.default_rng(0).random((12, 23)), np.tile([0, 1, 2, 3], 3))
+        clf.save_model(str(path))
 
-        mock_torch = MagicMock()
-        mock_torch.load.return_value = {}
+    def test_loads_xgboost_only_when_no_fusion_model(self, tmp_path):
+        """MLPredictor.__init__ uses xgboost-only mode when fusion_model.pt is absent."""
+        self._make_tiny_xgb(tmp_path / "xgb_classifier.json")
+        # fusion_model.pt intentionally not created
 
+        predictor = MLPredictor(tmp_path)
+
+        assert predictor._neural_mode is False
+        assert predictor.fusion_model is None
+        # JSON path uses Booster; pkl path uses xgb_classifier
+        assert predictor._xgb_booster is not None or predictor.xgb_classifier is not None
+
+    def test_loads_neural_mode_when_fusion_model_present(self, tmp_path):
+        """MLPredictor.__init__ activates neural mode when fusion_model.pt exists."""
+        self._make_tiny_xgb(tmp_path / "xgb_classifier.json")
+
+        # Use mocks only for the heavyweight neural components
+        mock_fusion_module = MagicMock()
         mock_fusion_instance = MagicMock()
-        mock_fusion_cls = MagicMock(return_value=mock_fusion_instance)
-
-        mock_xgb_instance = MagicMock()
-
-        # Patch the lazy imports by pre-populating sys.modules with mocks
-        # so that `import torch` inside __init__ resolves to our mock.
-        modules_patch = {
-            "torch": mock_torch,
-            "numpy": MagicMock(),
-        }
+        mock_fusion_module.PhishScamSenseFusionModel = MagicMock(return_value=mock_fusion_instance)
+        mock_nlp_module = MagicMock()
 
         with (
-            patch.dict(sys.modules, modules_patch),
-            patch("ml.src.models.fusion_model.PhishScamSenseFusionModel", mock_fusion_cls),
-            patch("ml.src.models.nlp_branch.URLTokenizer"),
-            patch("ml.src.features.url_features.extract_url_features"),
-            patch("app.services.ml_predictor.pickle.load", return_value=mock_xgb_instance),
+            patch.dict(sys.modules, {
+                "torch": MagicMock(**{"load.return_value": {}}),
+                "ml.src.models.fusion_model": mock_fusion_module,
+                "ml.src.models.nlp_branch": mock_nlp_module,
+            }),
         ):
+            (tmp_path / "fusion_model.pt").touch()
             predictor = MLPredictor(tmp_path)
 
-        mock_torch.load.assert_called_once()
-        mock_fusion_instance.load_state_dict.assert_called_once_with({})
-        mock_fusion_instance.eval.assert_called_once()
-        assert predictor.xgb_classifier is mock_xgb_instance
+        assert predictor._neural_mode is True
+        assert predictor.fusion_model is mock_fusion_instance
 
 
 # ---------------------------------------------------------------------------
