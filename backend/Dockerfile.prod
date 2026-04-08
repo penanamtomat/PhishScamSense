@@ -15,6 +15,9 @@ COPY backend/ .
 # Copy ml source (needed for ml.src.features, ml.src.models imports)
 COPY ml/ /ml/
 
+# Create reports directory with correct ownership before switching user
+RUN mkdir -p /app/data/reports && chown -R appuser:appuser /app/data
+
 USER appuser
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
