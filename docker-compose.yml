@@ -38,6 +38,7 @@ services:
       - rabbitmq
     volumes:
       - ./ml/exports:/ml/exports:ro
+      - backend_data:/app/data
 
   # Celery Worker
   celery-worker:
@@ -57,3 +58,4 @@ services:
 volumes:
   rabbitmq_data:
   mlflow_data:
+  backend_data:
