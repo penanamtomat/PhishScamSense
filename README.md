@@ -1,6 +1,6 @@
 # PhishScamSense
 
-Real-time phishing and scam URL detection via a browser extension backed by a hybrid multimodal AI inference service.
+Real-time phishing URL detection via a browser extension backed by a hybrid multimodal AI inference service.
 
 ## Overview
 
