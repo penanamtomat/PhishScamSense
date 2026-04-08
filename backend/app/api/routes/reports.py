@@ -11,9 +11,8 @@ from app.schemas.report import FalsePositiveReport, ReportResponse
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Persist reports next to the project data directory
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-_REPORTS_DIR  = _PROJECT_ROOT / "data" / "reports"
+# Persist reports inside /app/data/reports (works in both Docker and local dev)
+_REPORTS_DIR  = Path(__file__).resolve().parents[3] / "data" / "reports"
 _REPORTS_FILE = _REPORTS_DIR / "false_positives.jsonl"
 
 
