@@ -48,50 +48,55 @@ jobs:
           TAG="${{ github.ref_name }}"
           if [[ "$TAG" == *"-beta"* || "$TAG" == *"-alpha"* || "$TAG" == *"-rc"* ]]; then
             echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "prerelease_flag=--prerelease" >> $GITHUB_OUTPUT
             echo "label=🧪 Beta" >> $GITHUB_OUTPUT
           else
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "prerelease_flag=" >> $GITHUB_OUTPUT
             echo "label=🚀 Stable" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish release to PhishScamSense-Extension repo
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.EXTENSION_REPO }}
-          repository: penanamtomat/PhishScamSense-Extension
-          tag_name: ${{ github.ref_name }}
-          name: "PhishScamSense ${{ github.ref_name }}"
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          body: |
-            ## ${{ steps.prerelease.outputs.label }} — PhishScamSense ${{ github.ref_name }}
+      - name: Publish release to PhishScamSense-Extension
+        env:
+          GH_TOKEN: ${{ secrets.EXTENSION_REPO }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          LABEL="${{ steps.prerelease.outputs.label }}"
+          PRERELEASE_FLAG="${{ steps.prerelease.outputs.prerelease_flag }}"
 
-            > ${{ steps.prerelease.outputs.is_prerelease == 'true' && '⚠️ This is a **beta release** — expect bugs. Please report issues [here](https://github.com/penanamtomat/PhishScamSense/issues).' || '✅ Stable release.' }}
+          NOTES="## ${LABEL} — PhishScamSense ${TAG}
 
-            ---
+          $([ '${{ steps.prerelease.outputs.is_prerelease }}' = 'true' ] && echo '> ⚠️ This is a **beta release** — expect bugs. Please report issues [here](https://github.com/penanamtomat/PhishScamSense/issues).' || echo '> ✅ Stable release.')
 
-            ## Install Instructions
+          ---
 
-            ### Chrome / Edge / Brave / Opera
-            1. Download **`phishscamsense-*-chrome.zip`** below
-            2. Unzip the file anywhere on your computer
-            3. Open your browser → go to `chrome://extensions` (or `edge://extensions`)
-            4. Enable **Developer mode** toggle (top-right corner)
-            5. Click **Load unpacked** → select the unzipped folder
-            6. ✅ PhishScamSense icon will appear in your toolbar
+          ## Install Instructions
 
-            > Chrome will show a "Developer mode" notice on startup — this is expected for extensions not on the Web Store.
+          ### Chrome / Edge / Brave / Opera
+          1. Download \`phishscamsense-*-chrome.zip\` below
+          2. Unzip the file anywhere on your computer
+          3. Open your browser → go to \`chrome://extensions\` (or \`edge://extensions\`)
+          4. Enable **Developer mode** toggle (top-right corner)
+          5. Click **Load unpacked** → select the unzipped folder
+          6. ✅ PhishScamSense icon will appear in your toolbar
 
-            ### Firefox
-            1. Download **`phishscamsense-*-firefox.zip`** below
-            2. Open Firefox → go to `about:addons`
-            3. Click the ⚙️ gear icon → **Install Add-on From File...**
-            4. Select the downloaded zip file
-            5. ✅ Done!
+          > Chrome will show a \"Developer mode\" notice on startup — this is expected for extensions not on the Web Store.
 
-            ---
+          ### Firefox
+          1. Download \`phishscamsense-*-firefox.zip\` below
+          2. Open Firefox → go to \`about:addons\`
+          3. Click the ⚙️ gear icon → **Install Add-on From File...**
+          4. Select the downloaded zip file
+          5. ✅ Done!
 
-            ### Issues or false positives?
-            Report them at the [main repository](https://github.com/penanamtomat/PhishScamSense/issues).
-          files: |
+          ---
+
+          ### Issues or false positives?
+          Report them at the [main repository](https://github.com/penanamtomat/PhishScamSense/issues)."
+
+          gh release create "$TAG" \
+            --repo penanamtomat/PhishScamSense-Extension \
+            --title "PhishScamSense ${TAG}" \
+            --notes "$NOTES" \
+            $PRERELEASE_FLAG \
             extension/.output/*.zip
-          draft: false
