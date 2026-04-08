@@ -59,7 +59,9 @@ async function verifyWithBackend(
   url: string
 ): Promise<{ phishing: boolean; confidence: number; threat_type?: string }> {
   const stored = await browser.storage.local.get("apiBase");
-  const apiBase = (stored.apiBase as string | undefined) || "http://localhost:8000";
+  const apiBase = (stored.apiBase as string | undefined)
+    || import.meta.env.WXT_API_BASE
+    || "http://localhost:8000";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);

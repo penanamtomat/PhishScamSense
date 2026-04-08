@@ -33,10 +33,14 @@ jobs:
 
       - name: Build Chrome extension (zip)
         working-directory: extension
+        env:
+          WXT_API_BASE: ${{ secrets.API_BASE_URL }}
         run: npm run zip
 
       - name: Build Firefox extension (zip)
         working-directory: extension
+        env:
+          WXT_API_BASE: ${{ secrets.API_BASE_URL }}
         run: npm run zip:firefox
 
       - name: List output files

@@ -10,10 +10,13 @@ venv/
 .venv/
 *.egg
 
-# Environment
+# Environment — never commit real credentials
 .env
+backend/.env
 .env.local
-.env.example
+.env.*.local
+extension/.env
+extension/.env.*
 
 # IDE
 .vscode/
