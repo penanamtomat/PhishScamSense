@@ -57,7 +57,7 @@ jobs:
       - name: Publish release to PhishScamSense-Extension repo
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.EXTENSION_REPO_TOKEN }}
+          token: ${{ secrets.EXTENSION_REPO }}
           repository: penanamtomat/PhishScamSense-Extension
           tag_name: ${{ github.ref_name }}
           name: "PhishScamSense ${{ github.ref_name }}"
