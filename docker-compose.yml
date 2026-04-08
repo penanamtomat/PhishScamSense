@@ -1,66 +1,58 @@
 version: "3.8"
 
 services:
-  # RabbitMQ Message Broker
+  # RabbitMQ Message Broker — internal only
   rabbitmq:
     image: rabbitmq:3-management
     container_name: phishsense-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    # No ports exposed — only reachable by other containers via service name
 
-  # MLflow Tracking Server
+  # MLflow Tracking Server — internal only
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.16.0
     container_name: phishsense-mlflow
-    ports:
-      - "5000:5000"
+    restart: unless-stopped
     command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow/artifacts
     volumes:
       - mlflow_data:/mlflow
+    # No ports exposed — internal only
 
-  # FastAPI Backend
+  # FastAPI Backend — only accessible via nginx on localhost
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile.prod
     container_name: phishsense-backend
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - ./backend/.env
     depends_on:
       - rabbitmq
     volumes:
-      - ./backend:/app
+      - ./ml/exports:/ml/exports:ro
 
   # Celery Worker
   celery-worker:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile.prod
     container_name: phishsense-celery
+    restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info -Q investigation,training
     env_file:
       - ./backend/.env
     depends_on:
       - rabbitmq
-
-  # BentoML Inference Service
-  bentoml:
-    build:
-      context: ./ml
-      dockerfile: Dockerfile
-    container_name: phishsense-bentoml
-    ports:
-      - "3000:3000"
     volumes:
-      - ./ml:/app
+      - ./ml/exports:/ml/exports:ro
 
 volumes:
   rabbitmq_data:
