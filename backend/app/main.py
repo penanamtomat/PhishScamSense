@@ -59,6 +59,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    # Allow all browser extension origins (chrome-extension://, moz-extension://)
+    allow_origin_regex=r"(chrome-extension|moz-extension)://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
