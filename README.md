@@ -1,50 +1,79 @@
 # PhishScamSense
 
-Real-time phishing URL detection via a browser extension backed by a local ML inference service.
+Real-time phishing and scam URL detection via a browser extension backed by a hybrid multimodal AI inference service.
 
 ## Overview
 
-PhishScamSense detects phishing and spam URLs as you browse using a 4-class XGBoost classifier trained on the CIC-Bell-DNS2021 dataset. The browser extension checks every navigation against a local FastAPI backend that runs fully on-device — no data leaves your machine.
+PhishScamSense detects phishing, malware, and spam URLs as you browse using a **Multimodal Fusion Architecture** — combining a Deep Learning NLP pipeline (DistilBERT + BiLSTM + Attention) with classical feature engineering, both feeding into an XGBoost final classifier. The browser extension checks every navigation against a self-hosted FastAPI backend.
 
 **Key capabilities:**
-- Real-time URL classification on every page load (< 50 ms per prediction)
-- 88-feature analysis: URL lexical structure, page content (HTML DOM), external signals (DNS/WHOIS)
-- Domain allowlist — 585+ trusted domain labels + 46 institutional TLD suffix patterns (`.ac.id`, `.go.id`, `.edu`, `.gov`, etc.) bypass ML for instant benign response
+- Real-time 4-class URL classification on every page load (benign / phishing / malware / spam)
+- Hybrid inference: deep semantic URL embeddings fused with 88 hand-engineered features
+- Domain allowlist — 585+ trusted domain labels + 46 institutional TLD suffix patterns (`.ac.id`, `.go.id`, `.edu`, `.gov`) bypass ML for instant benign response
 - Typosquatting detection against 257 known brands via Levenshtein distance
-- Suspicious TLD, shortening service, punycode, and IP-in-hostname detection
 - Content-based signals when page HTML is available: external forms, null iframes, JS popups, unsafe anchors
-- False positive reporting API — user-reported URLs saved to `data/reports/false_positives.jsonl`
+- False positive reporting API with user feedback loop
 
 ---
 
-## Installation (Browser Extension)
+## Model Architecture
 
-> The extension communicates with a local or self-hosted backend — see [Setup](#setup) below.
+PhishScamSense uses a **Hierarchical Multimodal Fusion** approach. Two parallel branches process different representations of the same URL, and their outputs are concatenated into a unified embedding before a final XGBoost classifier makes the prediction.
 
-### Chrome / Edge / Brave / Opera
+```
+                        URL string
+                            │
+            ┌───────────────┴───────────────┐
+            │                               │
+     NLP Branch                    Numerical Branch
+  (DistilBERT + BiLSTM             (MLP: 23 lexical
+     + Attention)                   features → 64-dim)
+         │                                  │
+    128-dim embedding               64-dim embedding
+            │                               │
+            └───────────────┬───────────────┘
+                            │
+                  Concatenate (192-dim)
+                            │
+                    XGBoost Booster
+                    (4-class classifier)
+                            │
+              benign / phishing / malware / spam
+```
 
-1. Go to the [**Releases**](../../releases) page and download the latest `phishscamsense-*-chrome.zip`
-2. Unzip the file anywhere on your computer
-3. Open your browser and navigate to `chrome://extensions` (or `edge://extensions`)
-4. Enable **Developer mode** (toggle in the top-right corner)
-5. Click **Load unpacked** → select the unzipped folder
-6. The PhishScamSense icon will appear in your browser toolbar
+### NLP Branch — `ml/src/models/nlp_branch.py`
 
-> **Note:** Chrome/Edge will show a "Developer mode extensions" banner on startup — this is normal for extensions not distributed via the Chrome Web Store.
+Processes the raw URL string as a sequence of tokens to capture **semantic and contextual patterns**:
 
-### Firefox
+1. **DistilBERT** (`distilbert-base-uncased`) — tokenizes the URL and produces a 768-dim contextual embedding per token. BERT weights are frozen during training; only downstream layers are fine-tuned.
+2. **BiLSTM** (2 layers, 256 hidden units, bidirectional) — processes the token sequence to capture sequential dependencies across the URL structure.
+3. **Attention Layer** — soft-weights each token position so the model learns to focus on suspicious substrings (e.g. brand names in unexpected positions, unusual TLDs).
+4. **FC Layer** — projects the attended 512-dim BiLSTM output down to a **128-dim semantic embedding**.
 
-1. Go to the [**Releases**](../../releases) page and download the latest `phishscamsense-*-firefox.zip`
-2. Open Firefox and navigate to `about:addons`
-3. Click the ⚙️ gear icon → **Install Add-on From File...**
-4. Select the downloaded zip file
-5. Confirm the permissions prompt
+### Numerical Branch — `ml/src/models/numerical_branch.py`
 
-### Configure Backend URL
+Processes **23 hand-crafted lexical and structural features** through a Multi-Layer Perceptron:
 
-After installing the extension, point it to your backend:
-- **Local (development):** `http://localhost:8000` (default)
-- **Self-hosted VPS:** `https://api.yourdomain.com`
+- Architecture: `Linear(23→128) → BN → ReLU → Dropout → Linear(128→64) → BN → ReLU → Dropout → Linear(64→64)`
+- Captures structural signals the NLP branch cannot infer from token sequences alone: entropy, digit ratios, subdomain depth, typosquatting distance, etc.
+- Output: **64-dim numerical embedding**
+
+> The codebase also includes a `CapsNetBranch` alternative for the numerical branch — Capsule Neural Networks preserve the spatial hierarchy of structural features. The MLP branch is used in the current production model.
+
+### Fusion & Classification
+
+The 128-dim NLP embedding and 64-dim numerical embedding are **concatenated** into a single **192-dim fused vector**. This vector is then fed into an **XGBoost Booster** (`multi:softmax`, 4 classes) which acts as the final decision layer.
+
+This design deliberately separates representation learning (neural networks) from classification (gradient-boosted trees), combining the strengths of both: deep learning captures semantic URL patterns that hand-crafted features miss, while XGBoost provides interpretable, robust classification with fast inference.
+
+### Inference Modes
+
+The backend supports two modes depending on available model files in `ml/exports/`:
+
+| Mode | Condition | Pipeline |
+|------|-----------|----------|
+| **Neural (default)** | `fusion_model.pt` present | DistilBERT → BiLSTM → Attention → MLP → Concat → XGBoost |
+| **XGBoost-only fallback** | `fusion_model.pt` absent | 88-feature vector → XGBoost directly |
 
 ---
 
@@ -77,7 +106,7 @@ graph LR
     E_Entry --> E_Popup[popup/]
 ```
 
-### Request flow
+### Request Flow
 
 ```
 Browser navigation
@@ -89,18 +118,40 @@ Extension (background.ts)
               ▼
        FastAPI Backend
               │
-              ├─ Allowlist check (domain label + TLD suffix)  ──► benign immediately
+              ├─ Allowlist check  ──────────────────────► benign immediately
               │
               ▼
        MLPredictor.predict()
-        ├─ extract_features()   ← 88 features (URL + content + external)
-        └─ XGBoost Booster.predict()
+        │
+        ├─ [Neural mode]
+        │   ├─ URLTokenizer → DistilBERT → BiLSTM → Attention  → 128-dim
+        │   ├─ extract_features(url) → 23 lexical features → MLP → 64-dim
+        │   └─ Concat(128 + 64) → 192-dim fused vector → XGBoost
+        │
+        └─ [XGBoost-only fallback]
+            └─ extract_features(url, html) → 88 features → XGBoost
               │
               ▼
        { phishing, confidence, label, threat_type }
               │
       Extension shows warning / blocks page
 ```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Browser Extension | WXT Framework (Vite) + React + TypeScript + TailwindCSS |
+| API | FastAPI + Pydantic + Uvicorn |
+| NLP Branch | DistilBERT (`distilbert-base-uncased`) + BiLSTM + Attention |
+| Numerical Branch | MLP (Multi-Layer Perceptron) / CapsNet |
+| Final Classifier | XGBoost Booster (JSON format, `multi:softmax`) |
+| Feature Extraction | tldextract (PSL), BeautifulSoup4, python-whois |
+| Training Dataset | CIC-Bell-DNS2021 (benign / phishing / malware / spam) |
+| MLOps (planned) | MLflow + Apache Airflow |
+| Message Broker | RabbitMQ + Celery |
 
 ---
 
@@ -116,21 +167,25 @@ PhishScamSense/
 │   │   ├── services/         ml_predictor.py — model loading & inference
 │   │   └── workers/          Celery stubs (future async tasks)
 │   ├── tests/                pytest test suite
-│   └── requirements.txt
+│   ├── Dockerfile            Development image
+│   └── Dockerfile.prod       Production image (project-root build context)
 │
 ├── ml/
-│   ├── exports/              Active model files (xgb_classifier.json, etc.)
+│   ├── exports/              Active model files (fusion_model.pt, xgb_classifier.json, etc.)
 │   ├── notebooks/            Exploratory analysis
 │   └── src/
 │       ├── data/             data_loader.py — CIC-Bell-DNS2021 ingestion + augmentation
 │       ├── features/
-│       │   ├── url_features.py         57 URL-only features
+│       │   ├── url_features.py         57 URL-only lexical features
 │       │   ├── content_features.py     24 HTML DOM features
 │       │   ├── external_features.py    7 DNS/WHOIS/HTTP features
 │       │   ├── feature_extractor.py    Combined 88-feature entry point
 │       │   └── whitelist.py            Domain allowlist (585 labels + 46 TLD suffixes)
-│       ├── models/           fusion_model.py (neural pipeline, optional)
-│       └── training/         train.py — XGBoost training pipeline
+│       ├── models/
+│       │   ├── nlp_branch.py           DistilBERT + BiLSTM + Attention
+│       │   ├── numerical_branch.py     MLP / CapsNet numerical branch
+│       │   └── fusion_model.py         Hierarchical fusion + XGBoost classifier
+│       └── training/         train.py — fusion model + XGBoost training pipeline
 │
 ├── extension/                WXT (Vite) browser extension
 │   ├── entrypoints/
@@ -153,22 +208,9 @@ PhishScamSense/
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Browser Extension | WXT Framework (Vite) + React + TypeScript + TailwindCSS |
-| API | FastAPI + Pydantic + Uvicorn |
-| ML Inference | XGBoost (Booster, JSON format) |
-| Feature Extraction | tldextract (PSL), BeautifulSoup4, python-whois |
-| Training Dataset | CIC-Bell-DNS2021 (benign / phishing / spam) |
-| MLOps (planned) | MLflow + Apache Airflow |
-
----
-
 ## Feature Engineering
 
-The classifier uses **88 features** grouped into three modules:
+The XGBoost-only fallback uses **88 features** grouped into three modules. In neural mode, only the 23 lexical features are passed to the MLP numerical branch (content and external features are not used as the NLP branch handles semantic context).
 
 ### URL features (57) — `ml/src/features/url_features.py`
 
@@ -210,25 +252,27 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### Training
 
-```bash
-# Download CIC-Bell-DNS2021 CSVs into data/raw/
-# Files needed: benign_domains.csv, phishing_domains.csv, spam_domains.csv
+The training pipeline supports two modes:
 
-# Fast balanced training (recommended for development)
+```bash
+# XGBoost-only (fast, no GPU required)
 python -m ml.src.training.train \
   --mode xgboost \
   --data-dir data/raw \
   --output-dir ml/exports \
   --samples-per-class 16000
 
-# Full dataset training
+# Full neural fusion (DistilBERT + XGBoost, GPU recommended)
 python -m ml.src.training.train \
-  --mode xgboost \
+  --mode fusion \
   --data-dir data/raw \
-  --output-dir ml/exports
+  --output-dir ml/exports \
+  --samples-per-class 16000
 ```
 
-Trained model is saved to `ml/exports/xgb_classifier.json` and loaded automatically by the backend on startup.
+Trained model files saved to `ml/exports/`:
+- `fusion_model.pt` — PyTorch fusion model weights (NLP + MLP branches)
+- `xgb_classifier.json` — XGBoost Booster (trained on fused embeddings)
 
 ### Browser Extension
 
@@ -267,8 +311,8 @@ Load the `extension/.output/chrome-mv3/` directory as an unpacked extension in C
 }
 ```
 
-Labels: `0` = benign, `1` = phishing, `2` = spam (internal), `3` = spam.
-`phishing: true` for any non-benign label.
+Labels: `0` = benign, `1` = phishing, `2` = malware, `3` = spam.  
+`phishing: true` for any non-benign label.  
 `features` is empty `{}` for allowlisted domains (fast path, no ML inference).
 
 ### `POST /api/v1/reports/false-positive`
@@ -309,7 +353,7 @@ The test suite covers:
 
 ## Model Performance
 
-Current model (`xgb_classifier.json`, trained on CIC-Bell-DNS2021, balanced 16k/class):
+Current model (`xgb_classifier.json` trained on fused 192-dim embeddings from CIC-Bell-DNS2021, balanced 16k/class):
 
 | Class | Precision | Recall | F1 |
 |---|---|---|---|
@@ -326,3 +370,4 @@ Current model (`xgb_classifier.json`, trained on CIC-Bell-DNS2021, balanced 16k/
 - [ ] VirusTotal / Google Safe Browsing validation for false positive reports
 - [ ] Scheduled Airflow DAG for weekly model retraining on fresh threat feeds
 - [ ] MLflow experiment tracking integration
+- [ ] CapsNet numerical branch as alternative to MLP
