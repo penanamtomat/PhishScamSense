@@ -1,0 +1,94 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - "v*.*.*"           # stable:  v1.0.0
+      - "v*.*.*-beta.*"    # beta:    v0.1.0-beta.1
+      - "v*.*.*-alpha.*"   # alpha:   v0.1.0-alpha.1
+      - "v*.*.*-rc.*"      # rc:      v1.0.0-rc.1
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build Chrome extension (zip)
+        working-directory: extension
+        run: npm run zip
+
+      - name: Build Firefox extension (zip)
+        working-directory: extension
+        run: npm run zip:firefox
+
+      - name: List output files
+        run: ls -lh extension/.output/
+
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == *"-beta"* || "$TAG" == *"-alpha"* || "$TAG" == *"-rc"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "label=🧪 Beta" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "label=🚀 Stable" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "PhishScamSense ${{ github.ref_name }}"
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
+          body: |
+            ## ${{ steps.prerelease.outputs.label }} — PhishScamSense ${{ github.ref_name }}
+
+            > ${{ steps.prerelease.outputs.is_prerelease == 'true' && '⚠️ This is a **beta release** — expect bugs. Please report issues [here](../../issues).' || '✅ Stable release.' }}
+
+            ---
+
+            ## Install Instructions
+
+            ### Chrome / Edge / Brave / Opera
+            1. Download **`phishscamsense-*-chrome.zip`** below
+            2. Unzip the file anywhere on your computer
+            3. Open your browser and go to `chrome://extensions` (or `edge://extensions`)
+            4. Enable **Developer mode** toggle (top-right corner)
+            5. Click **Load unpacked** → select the unzipped folder
+            6. ✅ PhishScamSense icon will appear in your toolbar
+
+            > Chrome will show a notice on startup about developer mode extensions — this is expected.
+
+            ### Firefox
+            1. Download **`phishscamsense-*-firefox.zip`** below
+            2. Open Firefox → go to `about:addons`
+            3. Click the ⚙️ gear icon → **Install Add-on From File...**
+            4. Select the downloaded zip file
+            5. ✅ Done!
+
+            ---
+
+            ### Having issues?
+            Open an [issue](../../issues) and include your browser version and a screenshot.
+          files: |
+            extension/.output/*.zip
+          draft: false

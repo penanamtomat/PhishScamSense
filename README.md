@@ -17,6 +17,37 @@ PhishScamSense detects phishing and spam URLs as you browse using a 4-class XGBo
 
 ---
 
+## Installation (Browser Extension)
+
+> The extension communicates with a local or self-hosted backend — see [Setup](#setup) below.
+
+### Chrome / Edge / Brave / Opera
+
+1. Go to the [**Releases**](../../releases) page and download the latest `phishscamsense-*-chrome.zip`
+2. Unzip the file anywhere on your computer
+3. Open your browser and navigate to `chrome://extensions` (or `edge://extensions`)
+4. Enable **Developer mode** (toggle in the top-right corner)
+5. Click **Load unpacked** → select the unzipped folder
+6. The PhishScamSense icon will appear in your browser toolbar
+
+> **Note:** Chrome/Edge will show a "Developer mode extensions" banner on startup — this is normal for extensions not distributed via the Chrome Web Store.
+
+### Firefox
+
+1. Go to the [**Releases**](../../releases) page and download the latest `phishscamsense-*-firefox.zip`
+2. Open Firefox and navigate to `about:addons`
+3. Click the ⚙️ gear icon → **Install Add-on From File...**
+4. Select the downloaded zip file
+5. Confirm the permissions prompt
+
+### Configure Backend URL
+
+After installing the extension, point it to your backend:
+- **Local (development):** `http://localhost:8000` (default)
+- **Self-hosted VPS:** `https://api.yourdomain.com`
+
+---
+
 ## Architecture
 
 ```mermaid

@@ -6,7 +6,7 @@ export default defineConfig({
     name: "PhishScamSense",
     description:
       "Real-Time Multimodal Phishing Defense using Browser Extension",
-    version: "0.1.0",
+    version: "0.1.0",  // WXT requires semver without pre-release suffix
     permissions: ["storage", "tabs"],
     host_permissions: ["<all_urls>"],
   },
