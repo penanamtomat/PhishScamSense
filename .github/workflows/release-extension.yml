@@ -3,10 +3,10 @@ name: Release Extension
 on:
   push:
     tags:
-      - "v*.*.*"           # stable:  v1.0.0
-      - "v*.*.*-beta.*"    # beta:    v0.1.0-beta.1
-      - "v*.*.*-alpha.*"   # alpha:   v0.1.0-alpha.1
-      - "v*.*.*-rc.*"      # rc:      v1.0.0-rc.1
+      - "v*.*.*"
+      - "v*.*.*-beta.*"
+      - "v*.*.*-alpha.*"
+      - "v*.*.*-rc.*"
 
 permissions:
   contents: write
@@ -54,15 +54,18 @@ jobs:
             echo "label=🚀 Stable" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create GitHub Release
+      - name: Publish release to PhishScamSense-Extension repo
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.EXTENSION_REPO_TOKEN }}
+          repository: penanamtomat/PhishScamSense-Extension
+          tag_name: ${{ github.ref_name }}
           name: "PhishScamSense ${{ github.ref_name }}"
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           body: |
             ## ${{ steps.prerelease.outputs.label }} — PhishScamSense ${{ github.ref_name }}
 
-            > ${{ steps.prerelease.outputs.is_prerelease == 'true' && '⚠️ This is a **beta release** — expect bugs. Please report issues [here](../../issues).' || '✅ Stable release.' }}
+            > ${{ steps.prerelease.outputs.is_prerelease == 'true' && '⚠️ This is a **beta release** — expect bugs. Please report issues [here](https://github.com/penanamtomat/PhishScamSense/issues).' || '✅ Stable release.' }}
 
             ---
 
@@ -71,12 +74,12 @@ jobs:
             ### Chrome / Edge / Brave / Opera
             1. Download **`phishscamsense-*-chrome.zip`** below
             2. Unzip the file anywhere on your computer
-            3. Open your browser and go to `chrome://extensions` (or `edge://extensions`)
+            3. Open your browser → go to `chrome://extensions` (or `edge://extensions`)
             4. Enable **Developer mode** toggle (top-right corner)
             5. Click **Load unpacked** → select the unzipped folder
             6. ✅ PhishScamSense icon will appear in your toolbar
 
-            > Chrome will show a notice on startup about developer mode extensions — this is expected.
+            > Chrome will show a "Developer mode" notice on startup — this is expected for extensions not on the Web Store.
 
             ### Firefox
             1. Download **`phishscamsense-*-firefox.zip`** below
@@ -87,8 +90,8 @@ jobs:
 
             ---
 
-            ### Having issues?
-            Open an [issue](../../issues) and include your browser version and a screenshot.
+            ### Issues or false positives?
+            Report them at the [main repository](https://github.com/penanamtomat/PhishScamSense/issues).
           files: |
             extension/.output/*.zip
           draft: false
