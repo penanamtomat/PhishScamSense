@@ -66,7 +66,7 @@ jobs:
 
           if [ "$HAS_COMMITS" = "0" ]; then
             echo "Repo is empty, initializing with README..."
-            git clone https://x-access-token:${{ secrets.EXTENSION_REPO }}@github.com/penanamtomat/PhishScamSense-Extension.git ext-repo
+            git clone https://x-access-token:${GH_TOKEN}@github.com/penanamtomat/PhishScamSense-Extension.git ext-repo
             cd ext-repo
 
             cat > README.md << 'READMEEOF'
