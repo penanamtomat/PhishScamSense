@@ -77,9 +77,16 @@ class MLPredictor:
         else:
             raise FileNotFoundError(f"No XGBoost model found in {exports_dir}")
 
-        # --- Fusion model (optional — only present in neural pipeline) ---
+        # --- Fusion model (only used when model_info.json says mode=neural) ---
+        import json as _json
+        _info_path = exports_dir / "model_info.json"
+        _model_mode = "xgboost"
+        if _info_path.exists():
+            with open(_info_path) as _f:
+                _model_mode = _json.load(_f).get("mode", "xgboost")
+
         fusion_path = exports_dir / "fusion_model.pt"
-        if fusion_path.exists():
+        if fusion_path.exists() and _model_mode == "neural":
             import torch
             from ml.src.models.fusion_model import PhishScamSenseFusionModel
             from ml.src.models.nlp_branch import URLTokenizer
