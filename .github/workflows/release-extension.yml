@@ -56,6 +56,62 @@ jobs:
             echo "label=🚀 Stable" >> $GITHUB_OUTPUT
           fi
 
+      - name: Initialize extension repo if empty
+        env:
+          GH_TOKEN: ${{ secrets.EXTENSION_REPO }}
+        run: |
+          # Check if the repo has any commits — if empty, push a README to initialize it
+          HAS_COMMITS=$(gh api repos/penanamtomat/PhishScamSense-Extension \
+            --jq '.size' 2>/dev/null || echo "0")
+
+          if [ "$HAS_COMMITS" = "0" ]; then
+            echo "Repo is empty, initializing with README..."
+            git clone https://x-access-token:${{ secrets.EXTENSION_REPO }}@github.com/penanamtomat/PhishScamSense-Extension.git ext-repo
+            cd ext-repo
+
+            cat > README.md << 'READMEEOF'
+          # PhishScamSense Extension
+
+          Real-time phishing and scam URL detection for Chrome and Firefox.
+
+          ## Install
+
+          Go to the [**Releases**](../../releases) page and follow the instructions for your browser.
+
+          ### Chrome / Edge / Brave / Opera
+          1. Download `phishscamsense-*-chrome.zip`
+          2. Unzip the file
+          3. Go to `chrome://extensions` → enable **Developer mode**
+          4. Click **Load unpacked** → select the unzipped folder
+
+          ### Firefox
+          1. Download `phishscamsense-*-firefox.zip`
+          2. Go to `about:addons` → ⚙️ → **Install Add-on From File...**
+          3. Select the zip file
+
+          ## Source Code & Issues
+          Main repository: [PhishScamSense](https://github.com/penanamtomat/PhishScamSense)
+          READMEEOF
+
+            git config user.email "actions@github.com"
+            git config user.name "GitHub Actions"
+            git add README.md
+            git commit -m "chore: initialize extension release repository"
+            git push origin main
+            cd ..
+          else
+            echo "Repo already initialized (size: $HAS_COMMITS KB)"
+          fi
+
+      - name: Delete existing release if present
+        env:
+          GH_TOKEN: ${{ secrets.EXTENSION_REPO }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release delete "$TAG" \
+            --repo penanamtomat/PhishScamSense-Extension \
+            --yes 2>/dev/null || true
+
       - name: Publish release to PhishScamSense-Extension
         env:
           GH_TOKEN: ${{ secrets.EXTENSION_REPO }}
@@ -64,7 +120,10 @@ jobs:
           LABEL="${{ steps.prerelease.outputs.label }}"
           PRERELEASE_FLAG="${{ steps.prerelease.outputs.prerelease_flag }}"
 
-          NOTES="## ${LABEL} — PhishScamSense ${TAG}
+          gh release create "$TAG" \
+            --repo penanamtomat/PhishScamSense-Extension \
+            --title "PhishScamSense ${TAG}" \
+            --notes "## ${LABEL} — PhishScamSense ${TAG}
 
           $([ '${{ steps.prerelease.outputs.is_prerelease }}' = 'true' ] && echo '> ⚠️ This is a **beta release** — expect bugs. Please report issues [here](https://github.com/penanamtomat/PhishScamSense/issues).' || echo '> ✅ Stable release.')
 
@@ -92,11 +151,6 @@ jobs:
           ---
 
           ### Issues or false positives?
-          Report them at the [main repository](https://github.com/penanamtomat/PhishScamSense/issues)."
-
-          gh release create "$TAG" \
-            --repo penanamtomat/PhishScamSense-Extension \
-            --title "PhishScamSense ${TAG}" \
-            --notes "$NOTES" \
+          Report them at the [main repository](https://github.com/penanamtomat/PhishScamSense/issues)." \
             $PRERELEASE_FLAG \
             extension/.output/*.zip
