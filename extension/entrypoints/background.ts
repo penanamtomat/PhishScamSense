@@ -61,12 +61,19 @@ async function verifyWithBackend(
   const stored = await browser.storage.local.get("apiBase");
   const apiBase = (stored.apiBase as string | undefined) || "http://localhost:8000";
 
-  const response = await fetch(`${apiBase}/api/v1/predict`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
 
-  if (!response.ok) throw new Error(`Backend returned ${response.status}`);
-  return await response.json();
+  try {
+    const response = await fetch(`${apiBase}/api/v1/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
