@@ -77,7 +77,7 @@ class URLTokenizer:
     def tokenize(self, urls: list[str]) -> dict:
         return self.tokenizer(
             urls,
-            padding=True,
+            padding="max_length",
             truncation=True,
             max_length=self.max_length,
             return_tensors="pt",
