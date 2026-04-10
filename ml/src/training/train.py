@@ -26,7 +26,7 @@ import xgboost as xgb
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
-from ml.src.data.data_loader import load_cic_bell_dns2021
+from ml.src.data.data_loader import load_cic_bell_dns2021, load_feedback_data
 from ml.src.features.feature_extractor import extract_features
 
 logging.basicConfig(
@@ -319,6 +319,12 @@ def parse_args():
     p.add_argument("--batch-size", type=int, default=32, help="Neural training batch size")
     p.add_argument("--lr", type=float, default=1e-4, help="Neural learning rate")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--feedback-dir",
+        default="data/feedback",
+        help="Directory with feedback CSVs (url,label) to merge into training set "
+             "(default: data/feedback). Set to '' to disable.",
+    )
     return p.parse_args()
 
 
@@ -355,6 +361,23 @@ def main():
     if not urls_all:
         logger.error("No data loaded — check --data-dir path.")
         sys.exit(1)
+
+    # ---- Merge feedback (false-positive corrections, etc.) ------------------
+    if args.feedback_dir:
+        fb_urls, fb_labels = load_feedback_data(args.feedback_dir)
+        if fb_urls:
+            # Repeat feedback samples to give them more weight during training.
+            # A small feedback set (e.g. 13 URLs) would otherwise be lost in a
+            # 100k-sample dataset. Repeating 10x makes each FP correction ~0.1%
+            # of the dataset — enough to shift the decision boundary without
+            # distorting overall class distributions.
+            FEEDBACK_REPEAT = 10
+            urls_all = urls_all + fb_urls * FEEDBACK_REPEAT
+            labels_all = labels_all + fb_labels * FEEDBACK_REPEAT
+            logger.info(
+                f"Merged {len(fb_urls):,} feedback URLs "
+                f"(repeated ×{FEEDBACK_REPEAT} → +{len(fb_urls) * FEEDBACK_REPEAT:,} rows)"
+            )
 
     # ---- Optional per-class balance ----------------------------------------
     if args.samples_per_class > 0:

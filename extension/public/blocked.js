@@ -40,24 +40,35 @@ else bar.className = "confidence-bar confidence-low";
 
 // "Go Back to Safety"
 document.getElementById("back-btn").addEventListener("click", () => {
-  window.location.href = "chrome://newtab";
+  chrome.tabs.getCurrent((tab) => {
+    chrome.tabs.update(tab.id, { url: "chrome://newtab" });
+  });
 });
 
 // Report false positive
 document.getElementById("report-btn").addEventListener("click", async () => {
   if (!blockedUrl || blockedUrl === "unknown") return;
+  const btn = document.getElementById("report-btn");
+  btn.disabled = true;
+  btn.textContent = "Submitting\u2026";
   try {
     const stored = await chrome.storage.local.get("apiBase");
     const apiBase = stored.apiBase || "http://localhost:8000";
-    await fetch(`${apiBase}/api/v1/reports/false-positive`, {
+    const response = await fetch(`${apiBase}/api/v1/reports/false-positive`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: blockedUrl }),
     });
-    document.getElementById("report-btn").textContent = "Report Submitted — Thank you!";
-    document.getElementById("report-btn").disabled = true;
-    document.getElementById("report-btn").style.color = "#22c55e";
+    if (!response.ok) throw new Error("Server returned " + response.status);
+    btn.textContent = "Report Submitted \u2014 Thank you!";
+    btn.style.color = "#22c55e";
   } catch {
-    alert("Could not submit report. Is the backend running?");
+    btn.disabled = false;
+    btn.textContent = "Could not submit report. Is the backend running?";
+    btn.style.color = "#ef4444";
+    setTimeout(() => {
+      btn.textContent = "Report as False Positive";
+      btn.style.color = "";
+    }, 3000);
   }
 });

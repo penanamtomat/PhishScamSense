@@ -179,6 +179,55 @@ def load_cic_bell_dns2021(
     return urls, labels
 
 
+def load_feedback_data(feedback_dir: str | Path) -> tuple[list[str], list[int]]:
+    """
+    Load all feedback CSVs from *feedback_dir* (e.g. data/feedback/).
+
+    Each CSV must have columns: url, label
+    Label values follow the same convention as the main dataset:
+        0=benign, 1=phishing, 2=malware, 3=spam
+
+    Currently the pipeline writes false-positive confirmed URLs as label=0
+    (benign) via scripts/ingest_false_positives.py.
+
+    Returns an empty pair if the directory does not exist or contains no CSVs.
+    """
+    feedback_dir = Path(feedback_dir)
+    urls: list[str] = []
+    labels: list[int] = []
+
+    if not feedback_dir.exists():
+        logger.debug(f"Feedback directory not found: {feedback_dir} — skipping")
+        return urls, labels
+
+    csv_files = sorted(feedback_dir.glob("*.csv"))
+    if not csv_files:
+        logger.debug(f"No CSV files in {feedback_dir} — skipping")
+        return urls, labels
+
+    for csv_path in csv_files:
+        count = 0
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                url = row.get("url", "").strip()
+                label_raw = row.get("label", "").strip()
+                if not url or not label_raw:
+                    continue
+                try:
+                    label = int(label_raw)
+                except ValueError:
+                    logger.warning(f"Non-integer label '{label_raw}' in {csv_path} — skipping row")
+                    continue
+                urls.append(url)
+                labels.append(label)
+                count += 1
+        logger.info(f"Loaded {count:,} feedback rows from {csv_path.name}")
+
+    logger.info(f"Total feedback rows: {len(urls):,}")
+    return urls, labels
+
+
 def load_csv_dataset(filepath: str | Path) -> tuple[list[str], list[int]]:
     """Load URLs and labels from a CSV file."""
     urls, labels = [], []
