@@ -64,7 +64,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
+) 
 
 app.include_router(predict.router, prefix="/api/v1", tags=["prediction"])
 app.include_router(threats.router, prefix="/api/v1", tags=["threats"])

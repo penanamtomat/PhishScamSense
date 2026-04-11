@@ -1,7 +1,9 @@
 # ML dependencies for PhishScamSense
 
 # Deep learning
-torch==2.5.1
+# Install with CUDA support (GPU): pip install torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/cu124
+# Install CPU-only: pip install torch==2.5.1
+torch==2.5.1+cu124
 transformers==4.47.0
 
 # Gradient boosting
