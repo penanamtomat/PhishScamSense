@@ -29,6 +29,10 @@ document.getElementById("description").textContent =
 document.getElementById("detail-url").textContent = blockedUrl;
 document.getElementById("detail-threat").textContent = threat.charAt(0).toUpperCase() + threat.slice(1);
 
+const phase = params.get("phase") || "1";
+document.getElementById("detail-phase").textContent =
+  phase === "2" ? "Content Analysis" : "URL Analysis";
+
 const pct = confidence ? parseFloat(confidence) * 100 : 0;
 document.getElementById("detail-confidence").textContent = pct.toFixed(1) + "%";
 

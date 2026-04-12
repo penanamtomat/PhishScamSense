@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PredictionRequest(BaseModel):
     url: str
-    html: str | None = None  # optional page HTML from browser extension
+    html: str | None = Field(default=None, max_length=1_000_000)
 
 
 class PredictionResponse(BaseModel):

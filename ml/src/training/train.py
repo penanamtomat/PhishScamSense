@@ -257,15 +257,27 @@ def save_artifacts(output_dir: Path, mode: str, **artifacts) -> dict:
 
         fusion_stamp = output_dir / f"fusion_model_{ts}.pt"
         fusion_latest = output_dir / "fusion_model_latest.pt"
+        fusion_canonical = output_dir / "fusion_model.pt"
         xgb_stamp = output_dir / f"xgb_classifier_{ts}.pkl"
         xgb_latest = output_dir / "xgb_classifier_latest.pkl"
+        xgb_canonical = output_dir / "xgb_classifier.pkl"
 
         torch.save(artifacts["fusion_model"].state_dict(), fusion_stamp)
         torch.save(artifacts["fusion_model"].state_dict(), fusion_latest)
+        torch.save(artifacts["fusion_model"].state_dict(), fusion_canonical)
         with open(xgb_stamp, "wb") as f:
             pickle.dump(artifacts["clf"], f)
         with open(xgb_latest, "wb") as f:
             pickle.dump(artifacts["clf"], f)
+        with open(xgb_canonical, "wb") as f:
+            pickle.dump(artifacts["clf"], f)
+
+        # Remove stale XGBoost JSON model (from xgboost-only training)
+        # to avoid the predictor loading the wrong model.
+        stale_json = output_dir / "xgb_classifier.json"
+        if stale_json.exists():
+            stale_json.rename(output_dir / f"xgb_classifier_archived_{ts}.json")
+            logger.info("Archived stale xgb_classifier.json (neural mode active)")
 
         logger.info(f"Saved fusion model → {fusion_stamp}")
         logger.info(f"Saved XGBoost model → {xgb_stamp}")

@@ -145,13 +145,25 @@ def test_predict_model_raises_exception(client, mock_predictor):
 
 
 def test_predict_predictor_called_with_url(client, mock_predictor):
-    """Verifies the predictor receives exactly the URL from the request."""
+    """Verifies the predictor receives the URL (with html=None when not provided)."""
     url = "https://suspicious-site.example.com/login?redirect=evil"
     mock_predictor.predict.return_value = MOCK_PHISHING_RESULT.copy()
 
     client.post("/api/v1/predict", json={"url": url})
 
-    mock_predictor.predict.assert_called_once_with(url)
+    mock_predictor.predict.assert_called_once_with(url, html=None)
+
+
+def test_predict_with_html_content(client, mock_predictor):
+    """When HTML is provided, predictor receives both url and html."""
+    url = "https://phish-example.com/login"
+    html = "<html><body><form action='http://evil.com/steal'><input type='password'></form></body></html>"
+    mock_predictor.predict.return_value = MOCK_PHISHING_RESULT.copy()
+
+    resp = client.post("/api/v1/predict", json={"url": url, "html": html})
+
+    assert resp.status_code == 200
+    mock_predictor.predict.assert_called_once_with(url, html=html)
 
 
 # ---------------------------------------------------------------------------

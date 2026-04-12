@@ -13,7 +13,12 @@ export default defineBackground(async () => {
   // same URL CAN be re-checked if the user navigates away and comes back.
   const inFlight = new Set<string>();
 
-  // Listen to every tab navigation
+  // Track tabs blocked by Phase 1 so Phase 2 does not double-block
+  const blockedTabs = new Set<number>();
+
+  // ---------------------------------------------------------------------------
+  // Phase 1: URL-only check at navigation time (fast, lexical-based)
+  // ---------------------------------------------------------------------------
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo, _tab) => {
     // Only act when the tab starts loading a new URL
     if (changeInfo.status !== "loading" || !changeInfo.url) return;
@@ -28,8 +33,6 @@ export default defineBackground(async () => {
     if (url.startsWith(blockedPage)) return;
 
     // Prevent double-firing for the same tab+url while a check is in-flight.
-    // Using a per-navigation key (not persistent) so re-visiting the same URL
-    // after navigating away always triggers a fresh check.
     const key = `${tabId}:${url}`;
     if (inFlight.has(key)) return;
     inFlight.add(key);
@@ -39,59 +42,139 @@ export default defineBackground(async () => {
 
       if (result.phishing) {
         console.log(
-          `[PhishScamSense] Blocked — ${result.threat_type} | confidence: ${(result.confidence * 100).toFixed(1)}% | url: ${url}`
+          `[PhishScamSense] Phase 1 blocked — ${result.threat_type} | confidence: ${(result.confidence * 100).toFixed(1)}% | url: ${url}`
         );
-        // Redirect to blocked page
-        const blockedPage = browser.runtime.getURL("/blocked.html");
+        blockedTabs.add(tabId);
+        const blockedPageUrl = browser.runtime.getURL("/blocked.html");
         const params = new URLSearchParams({
           url,
           threat: result.threat_type || "phishing",
           confidence: String(result.confidence),
+          phase: "1",
         });
         await browser.tabs.update(tabId, {
-          url: `${blockedPage}?${params.toString()}`,
+          url: `${blockedPageUrl}?${params.toString()}`,
         });
       }
     } catch (err) {
       console.error(`Failed to check URL ${url}:`, err);
     } finally {
-      // Release the in-flight lock so the same URL can be re-checked later
       inFlight.delete(key);
     }
   });
 
-  // Clean up in-flight entries for closed tabs
+  // Clean up in-flight entries and blocked state for closed tabs
   browser.tabs.onRemoved.addListener((tabId) => {
     for (const key of inFlight) {
       if (key.startsWith(`${tabId}:`)) inFlight.delete(key);
     }
+    blockedTabs.delete(tabId);
   });
 
-  // Also respond to popup status queries
-  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // ---------------------------------------------------------------------------
+  // Phase 2: Content-based check after page renders
+  // ---------------------------------------------------------------------------
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Popup status query
     if (message.type === "GET_STATUS") {
       sendResponse({ active: true });
       return false;
     }
+
+    // Phase 2: content script has page HTML ready for analysis
+    if (message.type === "PHASE2_CONTENT_READY") {
+      const tabId = sender.tab?.id;
+      if (tabId == null) return false;
+
+      // Skip if Phase 1 already blocked this tab
+      if (blockedTabs.has(tabId)) {
+        sendResponse({ skipped: true, reason: "already_blocked" });
+        return false;
+      }
+
+      // Respond immediately; analysis is fire-and-forget
+      sendResponse({ received: true });
+
+      handlePhase2(tabId, message.url, message.html).catch((err) => {
+        console.error(`[PhishScamSense] Phase 2 failed for tab ${tabId}:`, err);
+      });
+
+      return false;
+    }
+
+    return false;
   });
+
+  async function handlePhase2(
+    tabId: number,
+    url: string,
+    html: string
+  ): Promise<void> {
+    // Re-check: tab may have navigated away since content script fired
+    try {
+      const tab = await browser.tabs.get(tabId);
+      if (!tab.url?.startsWith(url.substring(0, 50))) {
+        return;
+      }
+    } catch {
+      // Tab was closed
+      return;
+    }
+
+    // Skip if Phase 1 blocked while we were waiting
+    if (blockedTabs.has(tabId)) return;
+
+    try {
+      const result = await verifyWithBackend(url, html);
+
+      if (result.phishing && !blockedTabs.has(tabId)) {
+        console.log(
+          `[PhishScamSense] Phase 2 blocked — ${result.threat_type} | confidence: ${(result.confidence * 100).toFixed(1)}% | url: ${url}`
+        );
+        blockedTabs.add(tabId);
+        const blockedPageUrl = browser.runtime.getURL("/blocked.html");
+        const params = new URLSearchParams({
+          url,
+          threat: result.threat_type || "phishing",
+          confidence: String(result.confidence),
+          phase: "2",
+        });
+        await browser.tabs.update(tabId, {
+          url: `${blockedPageUrl}?${params.toString()}`,
+        });
+      }
+    } catch (err) {
+      console.warn(`[PhishScamSense] Phase 2 error for ${url}:`, err);
+    }
+  }
 });
 
+// ---------------------------------------------------------------------------
+// Backend communication
+// ---------------------------------------------------------------------------
 async function verifyWithBackend(
-  url: string
+  url: string,
+  html?: string
 ): Promise<{ phishing: boolean; confidence: number; threat_type?: string }> {
   const stored = await browser.storage.local.get("apiBase");
   const apiBase = (stored.apiBase as string | undefined)
     || import.meta.env.WXT_API_BASE
     || "http://localhost:8000";
 
+  // Phase 1 (URL-only): 5s timeout
+  // Phase 2 (content):  15s timeout (backend parses HTML)
+  const timeout = html ? 15_000 : 5_000;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
+    const body: { url: string; html?: string } = { url };
+    if (html) body.html = html;
+
     const response = await fetch(`${apiBase}/api/v1/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Backend returned ${response.status}`);

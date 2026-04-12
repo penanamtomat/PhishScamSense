@@ -93,12 +93,19 @@ class MLPredictor:
 
             self._torch = torch
             state_dict = torch.load(fusion_path, map_location="cpu", weights_only=True)
-            self.fusion_model = PhishScamSenseFusionModel()
+
+            # Infer num_features from the checkpoint's first linear layer weight
+            # to avoid relying on potentially stale model_info.json metadata.
+            _first_weight = state_dict["numerical_branch.network.0.weight"]
+            _num_features = _first_weight.shape[1]
+
+            self.fusion_model = PhishScamSenseFusionModel(num_features=_num_features)
             self.fusion_model.load_state_dict(state_dict)
             self.fusion_model.eval()
             self.tokenizer = URLTokenizer()
             self._neural_mode = True
-            logger.info("Neural pipeline loaded (DistilBERT + XGBoost)")
+            self._num_features = _num_features
+            logger.info("Neural pipeline loaded (DistilBERT + XGBoost, num_features=%d)", _num_features)
         else:
             self.fusion_model = None
             self.tokenizer = None
@@ -144,11 +151,18 @@ class MLPredictor:
 
         np = self._np
         features = self._extract_features(url, html=html, compute_external=False)
+        feat_values = list(features.values())
 
         if self._neural_mode:
             torch = self._torch
             tokens = self.tokenizer.tokenize([url])
-            numerical = torch.tensor([list(features.values())], dtype=torch.float32)
+            # The MLP branch expects exactly _num_features inputs (the first N
+            # features from extract_url_features).  Content/external features
+            # beyond this count are not part of the neural embedding and are
+            # ignored by the MLP.
+            numerical = torch.tensor(
+                [feat_values[: self._num_features]], dtype=torch.float32
+            )
             with torch.no_grad():
                 fused = self.fusion_model(
                     tokens["input_ids"],
@@ -157,7 +171,7 @@ class MLPredictor:
                 )
             input_features = fused.cpu().numpy()
         else:
-            input_features = np.array([list(features.values())], dtype=np.float32)
+            input_features = np.array([feat_values], dtype=np.float32)
 
         if self._xgb_booster is not None:
             import xgboost as xgb
