@@ -49,7 +49,7 @@ def _verify_model_file(path: Path, exports_dir: Path) -> None:
     - Subsequent runs: compares stored vs actual hash, raises RuntimeError on mismatch.
     """
     import json as _json
-    checksum_path = exports_dir / _CHECKSUM_FILE
+    checksum_path = Path("/app/data") / _CHECKSUM_FILE if Path("/app/data").exists() else Path(__file__).resolve().parent / _CHECKSUM_FILE
     checksums: dict = {}
     if checksum_path.exists():
         try:
