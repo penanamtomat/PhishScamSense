@@ -4,8 +4,11 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 
+from app.core.config import settings
+from app.core.rate_limit import limiter
+from app.core.security import get_api_key
 from app.schemas.report import FalsePositiveReport, ReportResponse
 
 router = APIRouter()
@@ -24,7 +27,12 @@ def _save_report(entry: dict) -> None:
 
 
 @router.post("/reports/false-positive", response_model=ReportResponse)
-async def report_false_positive(report: FalsePositiveReport):
+@limiter.limit(settings.RATE_LIMIT_REPORTS)
+async def report_false_positive(
+    request: Request,
+    report: FalsePositiveReport,
+    api_key: str = Depends(get_api_key),
+):
     """Accept a false positive report and persist it to data/reports/false_positives.jsonl."""
     report_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()

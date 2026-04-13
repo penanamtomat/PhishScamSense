@@ -10,6 +10,11 @@ from unittest.mock import MagicMock
 
 from app.main import app
 import app.services.ml_predictor as ml_predictor_module
+from app.core.config import settings
+from app.core.rate_limit import limiter
+
+# Configure a test API key so auth works in test environment
+_TEST_API_KEY = "test-api-key-12345"
 
 # ---------------------------------------------------------------------------
 # Default mock prediction results
@@ -94,19 +99,25 @@ def mock_predictor():
 
 
 @pytest.fixture
-def client(mock_predictor):
+def client(mock_predictor, monkeypatch):
     """TestClient with the global predictor replaced by a mock."""
+    monkeypatch.setattr(settings, "API_KEYS", [_TEST_API_KEY])
     ml_predictor_module.set_predictor(mock_predictor)
+    # Reset rate limiter state between tests to avoid 429 in fast test runs
+    limiter._storage.reset() if hasattr(limiter._storage, "reset") else None
     with TestClient(app) as c:
+        c.headers["X-API-Key"] = _TEST_API_KEY
         yield c
     ml_predictor_module.set_predictor(None)
 
 
 @pytest.fixture
-def client_no_model():
+def client_no_model(monkeypatch):
     """TestClient with no predictor loaded (simulates model not ready)."""
+    monkeypatch.setattr(settings, "API_KEYS", [_TEST_API_KEY])
     with TestClient(app) as c:
         # Set None AFTER lifespan runs (lifespan loads the real model on entry)
         ml_predictor_module.set_predictor(None)
+        c.headers["X-API-Key"] = _TEST_API_KEY
         yield c
     ml_predictor_module.set_predictor(None)

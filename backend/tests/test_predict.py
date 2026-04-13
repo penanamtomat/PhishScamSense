@@ -29,7 +29,8 @@ def test_predict_phishing_url(client, mock_predictor):
     assert body["threat_type"] == "phishing"
     assert body["label"] == 1
     assert 0.0 <= body["confidence"] <= 1.0
-    assert isinstance(body["features"], dict)
+    # Features are hidden by default (FIND-009: prevent info leakage)
+    assert body["features"] is None
 
 
 def test_predict_benign_url(client, mock_predictor):
@@ -177,3 +178,74 @@ def test_health_check(client):
     body = resp.json()
     assert body["status"] == "healthy"
     assert "model_loaded" in body
+
+
+# ---------------------------------------------------------------------------
+# Security tests
+# ---------------------------------------------------------------------------
+
+
+def test_predict_no_api_key_returns_401(client_no_model, monkeypatch):
+    """Without X-API-Key header, request is rejected when API_KEYS is set."""
+    monkeypatch.setattr("app.core.config.settings.API_KEYS", ["secret-key"])
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        resp = c.post("/api/v1/predict", json={"url": "https://example.com"})
+        assert resp.status_code == 401
+
+
+def test_predict_invalid_api_key_returns_403(client_no_model, monkeypatch):
+    """Invalid X-API-Key header is rejected."""
+    monkeypatch.setattr("app.core.config.settings.API_KEYS", ["secret-key"])
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        c.headers["X-API-Key"] = "wrong-key"
+        resp = c.post("/api/v1/predict", json={"url": "https://example.com"})
+        assert resp.status_code == 403
+
+
+def test_predict_invalid_url_format_returns_422(client, mock_predictor):
+    """URL without http/https scheme is rejected."""
+    resp = client.post("/api/v1/predict", json={"url": "not-a-url"})
+    assert resp.status_code == 422
+
+
+def test_predict_javascript_scheme_rejected(client, mock_predictor):
+    """javascript: scheme is rejected."""
+    resp = client.post("/api/v1/predict", json={"url": "javascript:alert(1)"})
+    assert resp.status_code == 422
+
+
+def test_predict_data_scheme_rejected(client, mock_predictor):
+    """data: scheme is rejected."""
+    resp = client.post("/api/v1/predict", json={"url": "data:text/html,<h1>hi</h1>"})
+    assert resp.status_code == 422
+
+
+def test_predict_features_hidden_by_default(client, mock_predictor):
+    """Features are not returned unless include_features=True."""
+    mock_predictor.predict.return_value = MOCK_PHISHING_RESULT.copy()
+    resp = client.post("/api/v1/predict", json={"url": "http://example.com"})
+    assert resp.json()["features"] is None
+
+
+def test_predict_features_visible_when_requested(client, mock_predictor):
+    """Features are returned when include_features=True."""
+    mock_predictor.predict.return_value = MOCK_PHISHING_RESULT.copy()
+    resp = client.post(
+        "/api/v1/predict",
+        json={"url": "http://example.com"},
+        params={"include_features": True},
+    )
+    assert isinstance(resp.json()["features"], dict)
+
+
+def test_security_headers_present(client, mock_predictor):
+    """Security headers are present in responses."""
+    resp = client.get("/health")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert "content-security-policy" in resp.headers
+    assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]

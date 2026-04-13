@@ -9,6 +9,7 @@ inside MLPredictor.__init__ so that the FastAPI app can start normally
 even when those packages are absent from the environment.
 """
 
+import hashlib
 import logging
 import pickle
 import sys
@@ -27,6 +28,52 @@ if str(_PROJECT_ROOT) not in sys.path:
 from ml.src.features.whitelist import is_whitelisted  # noqa: E402
 
 CLASS_NAMES = ["benign", "phishing", "malware", "spam"]
+
+_CHECKSUM_FILE = "model_checksums.sha256"
+
+
+def _compute_sha256(path: Path) -> str:
+    """Return hex SHA-256 digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_model_file(path: Path, exports_dir: Path) -> None:
+    """
+    Verify *path* against stored SHA-256 in model_checksums.sha256.
+
+    - First run (no checksum file): records hash and warns operator to commit the file.
+    - Subsequent runs: compares stored vs actual hash, raises RuntimeError on mismatch.
+    """
+    import json as _json
+    checksum_path = exports_dir / _CHECKSUM_FILE
+    checksums: dict = {}
+    if checksum_path.exists():
+        try:
+            checksums = _json.loads(checksum_path.read_text())
+        except Exception:
+            checksums = {}
+    file_key = path.name
+    actual = _compute_sha256(path)
+    if file_key not in checksums:
+        checksums[file_key] = actual
+        checksum_path.write_text(_json.dumps(checksums, indent=2))
+        logger.warning(
+            "Model checksum recorded for %s (%s). "
+            "Commit %s to source control to enable tamper detection.",
+            file_key, actual, _CHECKSUM_FILE,
+        )
+    elif checksums[file_key] != actual:
+        raise RuntimeError(
+            f"Model integrity check FAILED for {path.name}. "
+            f"Expected {checksums[file_key]}, got {actual}. "
+            "File may have been tampered with. Aborting."
+        )
+    else:
+        logger.debug("Model integrity OK: %s", file_key)
 
 
 class MLPredictor:
@@ -61,19 +108,31 @@ class MLPredictor:
         json_path = exports_dir / "xgb_classifier.json"
         pkl_path  = exports_dir / "xgb_classifier.pkl"
         if json_path.exists():
+            _verify_model_file(json_path, exports_dir)
             booster = xgb.Booster()
             booster.load_model(str(json_path))
             self._xgb_booster = booster
             self.xgb_classifier = None   # not used in booster mode
             logger.info("Loaded XGBoost model from JSON (Booster)")
         elif pkl_path.exists():
+            warnings.warn(
+                "Loading XGBoost model from pickle is deprecated and insecure. "
+                "Retrain with the latest train.py to generate .json format. "
+                "Pickle support will be removed in a future version.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
                 warnings.filterwarnings("ignore", category=FutureWarning)
-                with open(pkl_path, "rb") as f:
-                    self.xgb_classifier = pickle.load(f)
+                _verify_model_file(pkl_path, exports_dir)
+            with open(pkl_path, "rb") as f:
+                    self.xgb_classifier = pickle.load(f)  # noqa: S301
             self._xgb_booster = None
-            logger.info("Loaded XGBoost model from pickle (XGBClassifier)")
+            logger.warning(
+                "Loaded XGBoost model from INSECURE pickle format. "
+                "Please retrain to generate .json format."
+            )
         else:
             raise FileNotFoundError(f"No XGBoost model found in {exports_dir}")
 
@@ -92,6 +151,7 @@ class MLPredictor:
             from ml.src.models.nlp_branch import URLTokenizer
 
             self._torch = torch
+            _verify_model_file(fusion_path, exports_dir)
             state_dict = torch.load(fusion_path, map_location="cpu", weights_only=True)
 
             # Infer num_features from the checkpoint's first linear layer weight

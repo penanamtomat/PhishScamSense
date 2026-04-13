@@ -2,13 +2,21 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.routes import predict, reports, threats
 from app.core.config import settings
+from app.core.logging_config import setup_logging
+from app.core.rate_limit import limiter
+from app.core.request_logger import RequestLoggerMiddleware
+from app.core.security import get_api_key_optional
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.services.ml_predictor import get_predictor
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Resolve exports path relative to this file's location so it works
@@ -54,16 +62,27 @@ app = FastAPI(
     description="Real-Time Multimodal Phishing Defense Backend",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Request/response logging (innermost — runs closest to route handler)
+app.add_middleware(RequestLoggerMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    # Allow all browser extension origins (chrome-extension://, moz-extension://)
-    allow_origin_regex=r"(chrome-extension|moz-extension)://.*",
+    allow_origin_regex=r"(chrome-extension|moz-extension)://.*" if settings.CORS_ALLOW_EXTENSION_ORIGINS else None,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key"],
 ) 
 
 app.include_router(predict.router, prefix="/api/v1", tags=["prediction"])
@@ -72,5 +91,5 @@ app.include_router(reports.router, prefix="/api/v1", tags=["reports"])
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(api_key: str | None = Depends(get_api_key_optional)):
     return {"status": "healthy", "model_loaded": get_predictor() is not None}

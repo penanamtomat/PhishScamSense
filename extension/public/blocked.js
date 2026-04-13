@@ -42,10 +42,16 @@ if (pct >= 80) bar.className = "confidence-bar confidence-high";
 else if (pct >= 50) bar.className = "confidence-bar confidence-mid";
 else bar.className = "confidence-bar confidence-low";
 
-// "Go Back to Safety"
+// Cross-browser API shim (browser.* for Firefox, chrome.* fallback for Chrome)
+const ext = typeof browser !== "undefined" ? browser : chrome;
+
+// "Go Back to Safety" — use browser-appropriate new-tab URL
 document.getElementById("back-btn").addEventListener("click", () => {
-  chrome.tabs.getCurrent((tab) => {
-    chrome.tabs.update(tab.id, { url: "chrome://newtab" });
+  ext.tabs.getCurrent((tab) => {
+    const newTabUrl = ext.runtime.getURL("/blocked.html").startsWith("moz-extension:")
+      ? "about:home"
+      : "chrome://newtab";
+    ext.tabs.update(tab.id, { url: newTabUrl });
   });
 });
 
@@ -56,11 +62,15 @@ document.getElementById("report-btn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Submitting\u2026";
   try {
-    const stored = await chrome.storage.local.get("apiBase");
+    const stored = await ext.storage.local.get("apiBase");
     const apiBase = stored.apiBase || "http://localhost:8000";
+    const keyStored = await ext.storage.local.get("apiKey");
+    const apiKey = keyStored.apiKey || "";
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers["X-API-Key"] = apiKey;
     const response = await fetch(`${apiBase}/api/v1/reports/false-positive`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers,
       body: JSON.stringify({ url: blockedUrl }),
     });
     if (!response.ok) throw new Error("Server returned " + response.status);

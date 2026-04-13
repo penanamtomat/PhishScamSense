@@ -39,6 +39,11 @@ services:
     volumes:
       - ./ml/exports:/ml/exports:ro
       - ./data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
   # Celery Worker
   celery-worker:
@@ -54,6 +59,11 @@ services:
       - rabbitmq
     volumes:
       - ./ml/exports:/ml/exports:ro
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   rabbitmq_data:

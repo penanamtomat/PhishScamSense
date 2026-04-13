@@ -42,6 +42,8 @@ import socket
 from datetime import datetime
 from urllib.parse import urlparse
 
+from ml.src.features.ssrf_guard import validate_url
+
 # ---------------------------------------------------------------------------
 # Default "unknown" values
 # ---------------------------------------------------------------------------
@@ -83,8 +85,16 @@ def extract_external_features(
     if not compute:
         return _zero_features()
 
-    if not url.startswith(("http://", "https://", "ftp://")):
+    # URL length guard
+    if len(url) > 2048:
+        return _zero_features()
+
+    if not url.startswith(("http://", "https://")):
         url = "http://" + url
+
+    # SSRF guard — validate before making any outbound request
+    if validate_url(url) is None:
+        return _zero_features()
 
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
@@ -128,28 +138,45 @@ def extract_external_features(
         pass
 
     # ------------------------------------------------------------------ #
-    # HTTP redirect chain                                                  #
+    # HTTP redirect chain (SSRF-safe: follow redirects manually)           #
     # ------------------------------------------------------------------ #
+    _MAX_REDIRECTS = 5
     try:
         import requests as _requests
         resp = _requests.get(
             url,
             timeout=timeout,
-            allow_redirects=True,
+            allow_redirects=False,
             headers={"User-Agent": "Mozilla/5.0 (compatible; PhishScamSense/1.0)"},
         )
-        history = resp.history
-        feats["redirect_count"] = len(history)
-        feats["has_redirect"]   = 1 if history else 0
+        redirect_count = 0
+        seen_external = False
+        current_url = url
 
-        if history:
-            # Check whether any redirect crossed domain boundaries
-            orig_domain = _registrable(hostname)
-            for r in history:
-                redir_host = (urlparse(r.url).hostname or "").lower()
-                if _registrable(redir_host) != orig_domain:
-                    feats["has_external_redirect"] = 1
-                    break
+        for _ in range(_MAX_REDIRECTS):
+            if resp.status_code not in (301, 302, 303, 307, 308):
+                break
+            location = resp.headers.get("Location", "")
+            if not location:
+                break
+            # Validate redirect target through SSRF guard
+            if validate_url(location) is None:
+                break
+            redirect_count += 1
+            redir_host = (urlparse(location).hostname or "").lower()
+            if _registrable(redir_host) != _registrable(hostname):
+                seen_external = True
+            current_url = location
+            resp = _requests.get(
+                location,
+                timeout=timeout,
+                allow_redirects=False,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; PhishScamSense/1.0)"},
+            )
+
+        feats["redirect_count"] = redirect_count
+        feats["has_redirect"]   = 1 if redirect_count > 0 else 0
+        feats["has_external_redirect"] = 1 if seen_external else 0
     except Exception:
         pass
 

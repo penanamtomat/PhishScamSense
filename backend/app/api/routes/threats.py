@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
+from app.core.security import get_api_key
 
 router = APIRouter()
 
@@ -21,7 +23,11 @@ def _bloom_filter_path() -> Path:
 
 
 @router.get("/threats/bloom-filter")
-async def get_bloom_filter():
+@limiter.limit(settings.RATE_LIMIT_THREATS)
+async def get_bloom_filter(
+    request: Request,
+    api_key: str = Depends(get_api_key),
+):
     """Return the Bloom Filter data for the browser extension."""
     bloom_path = _bloom_filter_path()
     if bloom_path.exists():

@@ -16,6 +16,32 @@ export default defineBackground(async () => {
   // Track tabs blocked by Phase 1 so Phase 2 does not double-block
   const blockedTabs = new Set<number>();
 
+  // URL prediction cache (1 hour TTL, max 500 entries)
+  const CACHE_TTL_MS = 60 * 60 * 1000;
+  const MAX_CACHE_SIZE = 500;
+  interface CacheEntry {
+    result: { phishing: boolean; confidence: number; threat_type?: string };
+    expiresAt: number;
+  }
+  const predictionCache = new Map<string, CacheEntry>();
+  function getCached(url: string): CacheEntry["result"] | null {
+    const entry = predictionCache.get(url);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) { predictionCache.delete(url); return null; }
+    return entry.result;
+  }
+  function setCached(url: string, result: CacheEntry["result"]): void {
+    if (predictionCache.size >= MAX_CACHE_SIZE) {
+      const oldest = predictionCache.keys().next().value;
+      if (oldest) predictionCache.delete(oldest);
+    }
+    predictionCache.set(url, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+  }
+
+  // Rate-limit backoff state
+  let rateLimitedUntil = 0;
+  const RATE_LIMIT_BACKOFF_MS = 60 * 1000;
+
   // ---------------------------------------------------------------------------
   // Phase 1: URL-only check at navigation time (fast, lexical-based)
   // ---------------------------------------------------------------------------
@@ -38,7 +64,18 @@ export default defineBackground(async () => {
     inFlight.add(key);
 
     try {
-      const result = await verifyWithBackend(url);
+      let result = getCached(url);
+      if (!result) {
+        if (Date.now() < rateLimitedUntil) {
+          console.warn(`[PhishScamSense] Rate limited — skipping check for ${url}. Protection temporarily reduced.`);
+          await browser.action.setBadgeText({ text: "!" });
+          await browser.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+          return;
+        }
+        result = await verifyWithBackend(url);
+        setCached(url, result);
+        await browser.action.setBadgeText({ text: "" });
+      }
 
       if (result.phishing) {
         console.log(
@@ -56,8 +93,15 @@ export default defineBackground(async () => {
           url: `${blockedPageUrl}?${params.toString()}`,
         });
       }
-    } catch (err) {
-      console.error(`Failed to check URL ${url}:`, err);
+    } catch (err: unknown) {
+      if (err instanceof RateLimitError) {
+        rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+        console.warn(`[PhishScamSense] Rate limited — protection reduced for 1 minute.`);
+        await browser.action.setBadgeText({ text: "!" });
+        await browser.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+      } else {
+        console.error(`Failed to check URL ${url}:`, err);
+      }
     } finally {
       inFlight.delete(key);
     }
@@ -125,7 +169,17 @@ export default defineBackground(async () => {
     if (blockedTabs.has(tabId)) return;
 
     try {
-      const result = await verifyWithBackend(url, html);
+      const cacheKey = `phase2:${url}`;
+      let result = getCached(cacheKey);
+      if (!result) {
+        if (Date.now() < rateLimitedUntil) {
+          console.warn(`[PhishScamSense] Rate limited — skipping Phase 2 for ${url}.`);
+          return;
+        }
+        result = await verifyWithBackend(url, html);
+        setCached(cacheKey, result);
+        await browser.action.setBadgeText({ text: "" });
+      }
 
       if (result.phishing && !blockedTabs.has(tabId)) {
         console.log(
@@ -143,8 +197,15 @@ export default defineBackground(async () => {
           url: `${blockedPageUrl}?${params.toString()}`,
         });
       }
-    } catch (err) {
-      console.warn(`[PhishScamSense] Phase 2 error for ${url}:`, err);
+    } catch (err: unknown) {
+      if (err instanceof RateLimitError) {
+        rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+        console.warn(`[PhishScamSense] Rate limited — Phase 2 protection reduced for 1 minute.`);
+        await browser.action.setBadgeText({ text: "!" });
+        await browser.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+      } else {
+        console.warn(`[PhishScamSense] Phase 2 error for ${url}:`, err);
+      }
     }
   }
 });
@@ -152,6 +213,10 @@ export default defineBackground(async () => {
 // ---------------------------------------------------------------------------
 // Backend communication
 // ---------------------------------------------------------------------------
+class RateLimitError extends Error {
+  constructor() { super("Rate limit exceeded (429)"); this.name = "RateLimitError"; }
+}
+
 async function verifyWithBackend(
   url: string,
   html?: string
@@ -171,12 +236,22 @@ async function verifyWithBackend(
     const body: { url: string; html?: string } = { url };
     if (html) body.html = html;
 
+    // API key authentication
+    const keyStored = await browser.storage.local.get("apiKey");
+    const apiKey = (keyStored.apiKey as string | undefined) || import.meta.env.WXT_API_KEY || "";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["X-API-Key"] = apiKey;
+
     const response = await fetch(`${apiBase}/api/v1/predict`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`Authentication failed: ${response.status}`);
+    }
+    if (response.status === 429) { throw new RateLimitError(); }
     if (!response.ok) throw new Error(`Backend returned ${response.status}`);
     return await response.json();
   } finally {

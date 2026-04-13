@@ -10,7 +10,7 @@ pydantic-settings==2.7.0
 
 # Async HTTP client (threat intel calls)
 httpx==0.28.1
-requests==2.32.3
+requests>=2.33.0
 
 # Task queue
 celery==5.4.0
@@ -18,6 +18,9 @@ redis==5.2.1             # Celery broker/backend
 
 # Environment
 python-dotenv==1.0.1
+
+# Rate limiting
+slowapi==0.1.9
 
 # ML inference (local model loading from ml/exports/)
 torch>=2.0.0

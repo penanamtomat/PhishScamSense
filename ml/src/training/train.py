@@ -16,7 +16,6 @@ Labels: 0=benign  1=phishing  2=malware  3=spam
 import argparse
 import json
 import logging
-import pickle
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -238,14 +237,6 @@ def save_artifacts(output_dir: Path, mode: str, **artifacts) -> dict:
         logger.info(f"Saved XGBoost model → {json_stamp}")
         saved["xgb_classifier"] = str(json_stamp)
 
-        # Keep pickle copies for compatibility
-        pkl_stamp = output_dir / f"xgb_classifier_{ts}.pkl"
-        pkl_latest = output_dir / "xgb_classifier_latest.pkl"
-        pkl_active = output_dir / "xgb_classifier.pkl"
-        for dst in (pkl_stamp, pkl_latest, pkl_active):
-            with open(dst, "wb") as f:
-                pickle.dump(artifacts["clf"], f)
-
         # Remove stale fusion model so ml_predictor uses xgboost-only mode
         stale_fusion = output_dir / "fusion_model.pt"
         if stale_fusion.exists():
@@ -258,19 +249,16 @@ def save_artifacts(output_dir: Path, mode: str, **artifacts) -> dict:
         fusion_stamp = output_dir / f"fusion_model_{ts}.pt"
         fusion_latest = output_dir / "fusion_model_latest.pt"
         fusion_canonical = output_dir / "fusion_model.pt"
-        xgb_stamp = output_dir / f"xgb_classifier_{ts}.pkl"
-        xgb_latest = output_dir / "xgb_classifier_latest.pkl"
-        xgb_canonical = output_dir / "xgb_classifier.pkl"
+        xgb_stamp = output_dir / f"xgb_classifier_{ts}.json"
+        xgb_latest = output_dir / "xgb_classifier_latest.json"
+        xgb_canonical = output_dir / "xgb_classifier.json"
 
         torch.save(artifacts["fusion_model"].state_dict(), fusion_stamp)
         torch.save(artifacts["fusion_model"].state_dict(), fusion_latest)
         torch.save(artifacts["fusion_model"].state_dict(), fusion_canonical)
-        with open(xgb_stamp, "wb") as f:
-            pickle.dump(artifacts["clf"], f)
-        with open(xgb_latest, "wb") as f:
-            pickle.dump(artifacts["clf"], f)
-        with open(xgb_canonical, "wb") as f:
-            pickle.dump(artifacts["clf"], f)
+        artifacts["clf"].save_model(str(xgb_stamp))
+        artifacts["clf"].save_model(str(xgb_latest))
+        artifacts["clf"].save_model(str(xgb_canonical))
 
         # Remove stale XGBoost JSON model (from xgboost-only training)
         # to avoid the predictor loading the wrong model.
