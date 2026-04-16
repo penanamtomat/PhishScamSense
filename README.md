@@ -234,6 +234,56 @@ DNS record presence, domain age (days), registration length (days), WHOIS regist
 
 ---
 
+## Beta Access
+
+**PhishScamSense is currently in beta testing.** To use the service:
+
+### Option 1: Browser Extension (Recommended)
+
+1. Download the extension from [phishscam.my.id/extension](https://phishscam.my.id/extension)
+2. Install it in Chrome or Firefox
+3. The extension automatically uses the public beta key
+
+### Option 2: API Access
+
+If you want to integrate PhishScamSense into your own application:
+
+```bash
+# Get beta info
+curl https://api.phishscam.my.id/api/v1/beta_info
+
+# Make predictions with the public beta key
+curl -X POST https://api.phishscam.my.id/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: phishscamsense-beta-2024-public" \
+  -d '{"url": "https://example.com"}'
+```
+
+### Rate Limits (Beta Mode)
+
+| Endpoint | Rate Limit |
+|----------|------------|
+| `/api/v1/predict` | 60/minute, 1000/hour (per IP) |
+| `/api/v1/reports` | 10/minute, 100/day (per IP) |
+| `/api/v1/threats` | 100/second, 10000/hour (per IP) |
+
+### Privacy
+
+During beta testing, we collect telemetry data to improve the service:
+- Request counts and usage patterns
+- Phishing detection results
+- Geographic distribution (country level only)
+- Browser type distribution
+
+**We do NOT collect:**
+- IP addresses (only hash for rate limiting)
+- Full URLs (only domain + TLD)
+- Personal identifiers
+
+You can verify current beta configuration by calling `/api/v1/beta_info`.
+
+---
+
 ## Setup
 
 ### Prerequisites

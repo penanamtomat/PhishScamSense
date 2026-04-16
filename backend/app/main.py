@@ -14,6 +14,7 @@ from app.core.rate_limit import limiter
 from app.core.request_logger import RequestLoggerMiddleware
 from app.core.security import get_api_key_optional
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.telemetry import telemetry
 from app.services.ml_predictor import get_predictor
 
 setup_logging()
@@ -92,4 +93,35 @@ app.include_router(reports.router, prefix="/api/v1", tags=["reports"])
 
 @app.get("/health")
 async def health_check(api_key: str | None = Depends(get_api_key_optional)):
-    return {"status": "healthy", "model_loaded": get_predictor() is not None}
+    """Health check endpoint."""
+    status = "healthy" if get_predictor() is not None else "degraded"
+    telemetry.log_health_check("/health", status)
+    return {"status": status, "model_loaded": get_predictor() is not None}
+
+
+@app.get("/api/v1/beta_info")
+async def beta_info():
+    """
+    Beta mode information endpoint.
+
+    Returns information about the current beta configuration,
+    including the public beta key that users should use.
+    """
+    if not settings.BETA_MODE:
+        return {"beta_mode": False, "message": "This is a production instance."}
+
+    return {
+        "beta_mode": True,
+        "version": "0.2.0-beta.2",
+        "public_beta_key": settings.API_KEYS[0] if settings.API_KEYS else None,
+        "telemetry_enabled": settings.ENABLE_TELEMETRY,
+        "telemetry_sample_rate": settings.TELEMETRY_SAMPLE_RATE,
+        "rate_limiting": "per_ip" if settings.BETA_MODE else "per_api_key",
+        "rate_limits": {
+            "predict": settings.RATE_LIMIT_PREDICT,
+            "reports": settings.RATE_LIMIT_REPORTS,
+            "threats": settings.RATE_LIMIT_THREATS,
+        },
+        "docs_url": "/docs" if settings.DOCS_ENABLED else None,
+        "extension_download": "https://phishscam.my.id/extension",
+    }

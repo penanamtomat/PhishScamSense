@@ -237,8 +237,11 @@ async function verifyWithBackend(
     if (html) body.html = html;
 
     // API key authentication
+    // Beta mode: use the public beta key by default
+    // Production mode: user can set custom key in settings
+    const BETA_API_KEY = "phishscamsense-beta-2024-public";
     const keyStored = await browser.storage.local.get("apiKey");
-    const apiKey = (keyStored.apiKey as string | undefined) || import.meta.env.WXT_API_KEY || "";
+    const apiKey = (keyStored.apiKey as string | undefined) || import.meta.env.WXT_API_KEY || BETA_API_KEY;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (apiKey) headers["X-API-Key"] = apiKey;
 

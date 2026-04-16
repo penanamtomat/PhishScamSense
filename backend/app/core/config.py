@@ -6,9 +6,17 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Authentication — list of valid API keys (JSON array of strings).
-    # When empty, auth is disabled (backward compat).
+    # Beta mode: single public key for all beta users
+    # Production: list of per-user keys
     # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
-    API_KEYS: list[str] = []
+    API_KEYS: list[str] = ["phishscamsense-beta-2024-public"]
+
+    # Beta mode flag - enables enhanced monitoring while keeping service open
+    BETA_MODE: bool = True
+
+    # Telemetry (beta mode only) - Log usage patterns without PII
+    ENABLE_TELEMETRY: bool = True
+    TELEMETRY_SAMPLE_RATE: float = 0.1  # Log 10% of requests for privacy
 
     # Swagger UI — set to False in production to disable /docs and /openapi.json
     DOCS_ENABLED: bool = True
@@ -20,10 +28,19 @@ class Settings(BaseSettings):
     # Allow chrome-extension:// and moz-extension:// origins
     CORS_ALLOW_EXTENSION_ORIGINS: bool = True
 
-    # Rate limiting (requests per minute per API key / IP)
-    RATE_LIMIT_PREDICT: str = "10/second;500/hour"
-    RATE_LIMIT_REPORTS: str = "5/minute;50/day"
-    RATE_LIMIT_THREATS: str = "20/second;1000/hour"
+    # Rate limiting
+    # Beta mode: per-IP limits (since all users share the same key)
+    # Production: per-API-key limits
+    RATE_LIMIT_PREDICT: str = "60/minute;1000/hour"  # Per-IP in beta mode
+    RATE_LIMIT_REPORTS: str = "10/minute;100/day"
+    RATE_LIMIT_THREATS: str = "100/second;10000/hour"
+
+    # User Agent whitelist (optional, for blocking abuse in beta mode)
+    # Empty list = allow all user agents
+    ALLOWED_USER_AGENTS: list[str] = [
+        "Mozilla/5.0",  # Standard browser UA prefix (extensions)
+        "PhishScamSense-Extension",
+    ]
 
     # RabbitMQ
     RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672//"
