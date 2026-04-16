@@ -16,14 +16,8 @@ interface BetaInfo {
   extension_download: string | null;
 }
 
-interface StorageData {
-  apiKey: string;
-  apiBase: string;
-}
-
 export default function Options() {
   const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState("");
   const [betaInfo, setBetaInfo] = useState<BetaInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,9 +35,8 @@ export default function Options() {
 
   const loadSettings = async () => {
     try {
-      const stored = await browser.storage.local.get<StorageData>(["apiKey", "apiBase"]);
+      const stored = await browser.storage.local.get<{ apiKey: string }>(["apiKey"]);
       setApiKey(stored.apiKey || "phishscamsense-beta-2024-public");
-      setApiBase(stored.apiBase || "https://api.phishscam.my.id");
     } catch (error) {
       console.error("Failed to load settings:", error);
     } finally {
@@ -54,7 +47,7 @@ export default function Options() {
   const fetchBetaInfo = async () => {
     try {
       const stored = await browser.storage.local.get("apiBase");
-      const baseUrl = stored.apiBase || "https://api.phishscam.my.id";
+      const baseUrl = (stored.apiBase as string | undefined) || "https://api.phishscam.my.id";
       const response = await fetch(`${baseUrl}/api/v1/beta_info`);
       if (response.ok) {
         const info = await response.json();
@@ -68,10 +61,7 @@ export default function Options() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await browser.storage.local.set({
-        apiKey,
-        apiBase,
-      });
+      await browser.storage.local.set({ apiKey });
       setTestResult({ success: true, message: "Settings saved successfully!" });
       setTimeout(() => setTestResult(null), 3000);
     } catch (error) {
@@ -87,15 +77,16 @@ export default function Options() {
     setTestResult(null);
 
     try {
+      const stored = await browser.storage.local.get("apiBase");
+      const apiBase = (stored.apiBase as string | undefined) || "https://api.phishscam.my.id";
+
       const response = await fetch(`${apiBase}/api/v1/predict`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": apiKey,
         },
-        body: JSON.stringify({
-          url: "https://example.com",
-        }),
+        body: JSON.stringify({ url: "https://example.com" }),
       });
 
       if (response.ok) {
@@ -116,7 +107,6 @@ export default function Options() {
 
   const resetToDefault = () => {
     setApiKey("phishscamsense-beta-2024-public");
-    setApiBase("https://api.phishscam.my.id");
   };
 
   if (loading) {
@@ -151,23 +141,6 @@ export default function Options() {
         {/* API Configuration */}
         <div className="bg-gray-800 rounded-lg p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">API Configuration</h2>
-
-          {/* API Base URL */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              API Base URL
-            </label>
-            <input
-              type="text"
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="https://api.phishscam.my.id"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              The backend API server URL
-            </p>
-          </div>
 
           {/* API Key */}
           <div className="mb-4">
