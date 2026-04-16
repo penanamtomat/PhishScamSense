@@ -170,7 +170,7 @@ def extract_content_features(html: str | None, hostname: str = "") -> dict:
     # Favicons
     favicon_ext = [
         t["href"] for t in soup.find_all("link", href=True)
-        if any(
+        if (
             (isinstance(t.get("rel"), list) and any(r.endswith("icon") for r in t["rel"]))
             or (isinstance(t.get("rel"), str) and t["rel"].endswith("icon"))
         )
