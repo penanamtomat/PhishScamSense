@@ -9,6 +9,18 @@ build/
 venv/
 .venv/
 *.egg
+*.tar.gz
+*.whl
+*.sqlite3
+*.db
+
+# Testing & type checking
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+*.ipynb_checkpoints/
 
 # Environment — never commit real credentials
 .env
@@ -32,6 +44,7 @@ Thumbs.db
 node_modules/
 extension/.output/
 extension/.wxt/
+package-lock.json
 
 # ML model artifacts — large binaries, not committed
 *.pt
@@ -44,6 +57,7 @@ mlruns/
 bentoml/
 ml/checkpoints/
 ml/exports/
+.cache/
 
 # Data — all contents ignored (top-level data/ directory only)
 /data/
