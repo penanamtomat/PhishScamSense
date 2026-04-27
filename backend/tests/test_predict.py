@@ -249,3 +249,43 @@ def test_security_headers_present(client, mock_predictor):
     assert resp.headers.get("x-frame-options") == "DENY"
     assert "content-security-policy" in resp.headers
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
+
+
+# ---------------------------------------------------------------------------
+# Shortener analysis field
+# ---------------------------------------------------------------------------
+
+def test_predict_shortener_url_includes_shortener_analysis(client, mock_predictor):
+    """Shortener URLs include shortener_analysis field in response."""
+    mock_predictor.predict.return_value = {
+        **MOCK_BENIGN_RESULT,
+        "shortener_analysis": {
+            "detected": True,
+            "final_url": "https://rekrutmen-bi.id/pkwt2026/beranda",
+            "hop_count": 1,
+            "html_fetched": True,
+        },
+    }
+
+    resp = client.post("/api/v1/predict", json={"url": "https://bit.ly/4doXuXd"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    sa = body.get("shortener_analysis")
+    assert sa is not None
+    assert sa["detected"] is True
+    assert sa["final_url"] == "https://rekrutmen-bi.id/pkwt2026/beranda"
+    assert sa["hop_count"] == 1
+    assert sa["html_fetched"] is True
+
+
+def test_predict_non_shortener_url_has_no_shortener_analysis(client, mock_predictor):
+    """Non-shortener URLs do not include shortener_analysis field."""
+    mock_predictor.predict.return_value = MOCK_BENIGN_RESULT.copy()
+
+    resp = client.post("/api/v1/predict", json={"url": "https://www.google.com"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("shortener_analysis") is None
+

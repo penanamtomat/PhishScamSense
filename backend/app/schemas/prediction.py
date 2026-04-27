@@ -37,9 +37,17 @@ class PredictionRequest(BaseModel):
         return v
 
 
+class ShortenerAnalysis(BaseModel):
+    detected: bool
+    final_url: str
+    hop_count: int
+    html_fetched: bool
+
+
 class PredictionResponse(BaseModel):
     phishing: bool
     confidence: float
     label: int = 0
     threat_type: str = "benign"
     features: dict | None = None
+    shortener_analysis: ShortenerAnalysis | None = None
