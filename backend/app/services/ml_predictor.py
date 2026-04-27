@@ -26,6 +26,10 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from ml.src.features.whitelist import is_whitelisted  # noqa: E402
+from ml.src.features.shortener_expander import (  # noqa: E402
+    expand_shortener_url,
+    is_shortener_url,
+)
 
 CLASS_NAMES = ["benign", "phishing", "malware", "spam"]
 
@@ -209,6 +213,18 @@ class MLPredictor:
                 "whitelisted": True,
             }
 
+        shortener_analysis: dict | None = None
+        if is_shortener_url(url):
+            expanded = expand_shortener_url(url)
+            url = expanded.final_url
+            html = expanded.html  # None triggers A2 fallback (URL-only) automatically
+            shortener_analysis = {
+                "detected": True,
+                "final_url": expanded.final_url,
+                "hop_count": expanded.hop_count,
+                "html_fetched": expanded.fetch_success,
+            }
+
         np = self._np
         features = self._extract_features(url, html=html, compute_external=False)
         feat_values = list(features.values())
@@ -244,13 +260,16 @@ class MLPredictor:
             proba = self.xgb_classifier.predict_proba(input_features)[0]
         pred_class = int(np.argmax(proba))
 
-        return {
+        result: dict = {
             "phishing": pred_class != 0,
             "confidence": float(proba[pred_class]),
             "label": pred_class,
             "threat_type": CLASS_NAMES[pred_class],
             "features": features,
         }
+        if shortener_analysis is not None:
+            result["shortener_analysis"] = shortener_analysis
+        return result
 
 
 # ---------------------------------------------------------------------------
