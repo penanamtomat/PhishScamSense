@@ -48,10 +48,17 @@ async def predict_url(
         phase, result["threat_type"], result["confidence"], result["phishing"], body.url, req_id,
     )
 
+    sa_data = result.get("shortener_analysis")
+    shortener_analysis = None
+    if sa_data is not None:
+        from app.schemas.prediction import ShortenerAnalysis
+        shortener_analysis = ShortenerAnalysis(**sa_data)
+
     return PredictionResponse(
         phishing=result["phishing"],
         confidence=result["confidence"],
         label=result["label"],
         threat_type=result["threat_type"],
         features=result.get("features") if include_features else None,
+        shortener_analysis=shortener_analysis,
     )
