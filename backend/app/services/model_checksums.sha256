@@ -1,3 +1,4 @@
 {
-  "xgb_classifier.json": "2b06ce0d5d45c62be5a09b1c3f18873323975cfef3c03c362f94a7ad912494ce"
+  "xgb_classifier.json": "5560d2ed4682236346c661f2f73a26e835e58ab9087150f2031785d3a62706c3",
+  "fusion_model.pt": "582bce099985d0dbbd8bb3ac7c74d1f86b637ea6e23469be9171974e3cfdc583"
 }

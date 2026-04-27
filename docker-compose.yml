@@ -39,12 +39,12 @@ services:
     volumes:
       - ./ml/exports:/ml/exports:ro
       - ./data:/app/data
+      - hf_cache:/home/appuser/.cache/huggingface
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp
-      - /home/appuser/.cache
       - /run
 
   # Celery Worker
@@ -70,3 +70,4 @@ services:
 volumes:
   rabbitmq_data:
   mlflow_data:
+  hf_cache:
