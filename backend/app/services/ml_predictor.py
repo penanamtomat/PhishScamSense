@@ -224,6 +224,17 @@ class MLPredictor:
                 "hop_count": expanded.hop_count,
                 "html_fetched": expanded.fetch_success,
             }
+            # Re-check whitelist on the resolved final URL
+            if is_whitelisted(url):
+                return {
+                    "phishing": False,
+                    "confidence": 1.0,
+                    "label": 0,
+                    "threat_type": "benign",
+                    "features": {},
+                    "whitelisted": True,
+                    "shortener_analysis": shortener_analysis,
+                }
 
         np = self._np
         features = self._extract_features(url, html=html, compute_external=False)
