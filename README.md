@@ -4,7 +4,7 @@ Real-time phishing URL detection via a browser extension backed by a hybrid mult
 
 ## Overview
 
-PhishScamSense detects phishing, malware, and spam URLs as you browse using a **Multimodal Fusion Architecture** — combining a Deep Learning NLP pipeline (DistilBERT + BiLSTM + Attention) with classical feature engineering, both feeding into an XGBoost final classifier. The browser extension checks every navigation against a self-hosted FastAPI backend.
+PhishScamSense detects phishing and spam URLs as you browse using a **Multimodal Fusion Architecture** — combining a Deep Learning NLP pipeline (DistilBERT + BiLSTM + Attention) with classical feature engineering, both feeding into an XGBoost final classifier. The browser extension checks every navigation against a self-hosted FastAPI backend.
 
 **Key capabilities:**
 - Real-time 4-class URL classification on every page load (benign / phishing / malware / spam)
