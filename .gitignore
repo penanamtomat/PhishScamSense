@@ -56,3 +56,9 @@ ml/exports/
 
 # Reference scripts (third-party, not maintained here)
 scripts/
+
+# Backend domain scan results
+backend-domain-result/
+
+# Extension build zips (testing artifacts, not release)
+*.zip
